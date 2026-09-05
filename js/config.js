@@ -7,10 +7,10 @@
 // Данные защищает не ключ, а правила безопасности Firestore (см. README).
 
 export const firebaseConfig = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyDd1TKQpL105dseu8jkuHYyEVZIgYOrmbs",
+  authDomain: "zastava-game.firebaseapp.com",
+  projectId: "zastava-game",
+  storageBucket: "zastava-game.firebasestorage.app",
+  messagingSenderId: "516507068886",
+  appId: "1:516507068886:web:b99c64b472c08467891c77"
 };
