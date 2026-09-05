@@ -1,4 +1,4 @@
-// auth-screen.js — вся логика страницы входа: вкладки, форма, Google, лобби.
+// auth-screen.js — вся логика страницы входа: вкладки, форма, лобби.
 
 import { auth, isConfigured } from "./firebase.js";
 import { ensureProfile }      from "./profile.js";
@@ -6,9 +6,8 @@ import { explain }            from "./errors.js";
 
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signInWithPopup, GoogleAuthProvider, updateProfile,
-  onAuthStateChanged, signOut, sendPasswordResetEmail
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  updateProfile, onAuthStateChanged, signOut, sendPasswordResetEmail
+} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 
 const $ = id => document.getElementById(id);
 const note = $("note");
@@ -23,7 +22,6 @@ const clearNote = () => { note.className = "note"; };
 if (!isConfigured){
   $("setup").classList.add("show");
   $("submitBtn").disabled = true;
-  $("googleBtn").disabled = true;
   say("Ключи Firebase не вписаны — смотри подсказку ниже.");
   throw new Error("firebaseConfig пустой");
 }
@@ -80,17 +78,6 @@ $("form").addEventListener("submit", async event => {
   }
 });
 
-/* ---------- вход через Google ---------- */
-$("googleBtn").onclick = async () => {
-  clearNote();
-  try {
-    const cred = await signInWithPopup(auth, new GoogleAuthProvider());
-    await ensureProfile(cred.user);
-  } catch (error){
-    say(explain(error));
-  }
-};
-
 /* ---------- сброс пароля ---------- */
 $("resetBtn").onclick = async () => {
   const email = $("email").value.trim();
@@ -124,7 +111,7 @@ onAuthStateChanged(auth, async user => {
     const p = await ensureProfile(user);
 
     $("hello").textContent   = p.nickname;
-    $("mail").textContent    = user.email || "вход через Google";
+    $("mail").textContent    = user.email || "";
     $("sPoints").textContent = p.points;
     $("sKills").textContent  = p.kills;
     $("sCases").textContent  = p.cases;
