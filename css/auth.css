@@ -1,0 +1,113 @@
+/* auth.css — только экран входа: левая витрина игры и правая колонка с формой. */
+
+.shell{
+  position:relative; z-index:1;
+  min-height:100%;
+  display:grid;
+  grid-template-columns:1.05fr .95fr;
+  max-width:1080px;
+  margin:0 auto;
+}
+@media (max-width:860px){
+  .shell{grid-template-columns:1fr}
+}
+
+/* ---------- левая колонка ---------- */
+.brand{
+  padding:56px 44px;
+  display:flex; flex-direction:column; justify-content:center; gap:34px;
+  border-right:1px solid var(--line);
+}
+@media (max-width:860px){
+  .brand{padding:38px 22px 26px; border-right:0; border-bottom:1px solid var(--line)}
+}
+
+.mark{
+  font-family:var(--display);
+  font-weight:600;
+  font-size:clamp(46px,9vw,78px);
+  letter-spacing:.06em;
+  line-height:.94;
+  margin:0;
+  color:var(--sand);
+}
+.mark span{
+  display:block;
+  font-family:var(--body);
+  font-size:14px; font-weight:400; letter-spacing:.02em;
+  color:rgba(236,231,219,.62);
+  margin-top:14px; max-width:34ch;
+}
+
+.maps{display:flex; gap:14px; flex-wrap:wrap}
+.map{
+  width:150px;
+  background:var(--concrete-2);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  padding:10px 10px 9px;
+}
+.map svg{display:block; width:100%; height:auto}
+.map b{
+  display:block; margin-top:9px;
+  font-family:var(--display); font-weight:500;
+  letter-spacing:.05em; font-size:14px; color:var(--paper);
+}
+.map i{font-style:normal; font-size:12px; color:rgba(236,231,219,.48)}
+
+.roster{
+  font-size:13px; color:var(--muted);
+  border-top:1px solid var(--line);
+  padding-top:16px;
+}
+
+/* ---------- правая колонка ---------- */
+.gate{
+  padding:56px 44px;
+  display:flex; flex-direction:column; justify-content:center;
+}
+@media (max-width:860px){ .gate{padding:30px 22px 46px} }
+
+.tabs{display:flex; gap:26px; margin-bottom:26px}
+.tab{
+  background:none; border:0; padding:0 0 8px; cursor:pointer;
+  font-family:var(--display); font-size:19px; font-weight:500;
+  letter-spacing:.04em; color:rgba(236,231,219,.42);
+  border-bottom:2px solid transparent;
+}
+.tab[aria-selected="true"]{color:var(--paper); border-bottom-color:var(--signal)}
+.tab:focus-visible{outline:2px solid var(--signal); outline-offset:3px}
+
+/* ---------- лобби после входа ---------- */
+.lobby{display:none}
+.lobby.show{display:block}
+.hide{display:none !important}
+
+.hello{
+  font-family:var(--display); font-size:30px; font-weight:500;
+  letter-spacing:.03em; margin:0 0 4px;
+}
+.mail{font-size:13px; color:rgba(236,231,219,.45); margin:0 0 24px}
+
+.stats{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+  background:var(--line);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  overflow:hidden; margin-bottom:22px;
+}
+.stat{background:var(--concrete-2); padding:14px 12px}
+.stat b{display:block; font-family:var(--display); font-size:26px; font-weight:500; color:var(--sand)}
+.stat span{font-size:12px; color:var(--muted)}
+
+/* ---------- подсказка про незаполненный конфиг ---------- */
+.setup{
+  margin:20px 44px 40px; padding:16px 18px; grid-column:1/-1;
+  background:rgba(232,163,23,.08);
+  border:1px solid rgba(232,163,23,.35);
+  border-radius:var(--r);
+  font-size:13.5px; color:#f0d199; display:none;
+}
+.setup.show{display:block}
+.setup code{font-family:ui-monospace,monospace; background:rgba(0,0,0,.3); padding:1px 5px; border-radius:2px}
+@media (max-width:860px){ .setup{margin:0 22px 30px} }

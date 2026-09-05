@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Застава — вход</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap&subset=cyrillic,latin" rel="stylesheet">
+
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/auth.css">
+</head>
+<body>
+
+<div class="shell">
+
+  <section class="brand">
+    <h1 class="mark">Застава
+      <span>Браузерный шутер на четверых. Заходишь по ссылке, стреляешь, забираешь очки.</span>
+    </h1>
+
+    <div class="maps">
+      <div class="map">
+        <svg viewBox="0 0 130 86" aria-hidden="true">
+          <rect width="130" height="86" fill="#22282a"/>
+          <g fill="#7a6242" stroke="#5c492f">
+            <rect x="18" y="16" width="20" height="20"/><rect x="30" y="30" width="16" height="16"/>
+            <rect x="86" y="48" width="20" height="20"/><rect x="72" y="34" width="16" height="16"/>
+            <rect x="56" y="12" width="14" height="14"/><rect x="22" y="58" width="18" height="16"/>
+            <rect x="98" y="14" width="14" height="14"/>
+          </g>
+          <g fill="#3d4a52"><rect x="0" y="40" width="12" height="30"/><rect x="118" y="18" width="12" height="30"/></g>
+          <circle cx="10" cy="78" r="3.2" fill="#e8a317"/><circle cx="120" cy="8" r="3.2" fill="#c9b896"/>
+        </svg>
+        <b>Склад</b><i>ящики, узкие проходы</i>
+      </div>
+
+      <div class="map">
+        <svg viewBox="0 0 130 86" aria-hidden="true">
+          <rect width="130" height="86" fill="#262523"/>
+          <g fill="#6e6a5e" stroke="#514e45">
+            <path d="M12 20h34v14H30v12H12z"/><path d="M84 52h34v14h-16v10H84z"/>
+            <rect x="54" y="34" width="24" height="18" rx="2"/>
+            <path d="M96 12h22v18H96z"/><path d="M14 60h20v16H14z"/>
+          </g>
+          <rect x="0" y="41" width="130" height="4" fill="#3d4a52" opacity=".55"/>
+          <circle cx="8" cy="10" r="3.2" fill="#e8a317"/><circle cx="122" cy="76" r="3.2" fill="#c9b896"/>
+        </svg>
+        <b>Камень</b><i>длинные простреливаемые линии</i>
+      </div>
+    </div>
+
+    <p class="roster">До 4 игроков в матче. Аккаунт хранит очки, статистику и кейсы.</p>
+  </section>
+
+  <section class="gate">
+    <div class="tabs" id="tabs" role="tablist">
+      <button class="tab" id="tabIn" role="tab" aria-selected="true">Вход</button>
+      <button class="tab" id="tabUp" role="tab" aria-selected="false">Регистрация</button>
+    </div>
+
+    <form id="form" autocomplete="on">
+      <div class="field" id="nickField" hidden>
+        <label for="nick">Позывной</label>
+        <input id="nick" name="nickname" maxlength="16" placeholder="Как тебя увидят в матче" autocomplete="nickname">
+      </div>
+
+      <div class="field">
+        <label for="email">Почта</label>
+        <input id="email" name="email" type="email" required placeholder="you@mail.ru" autocomplete="email">
+      </div>
+
+      <div class="field">
+        <label for="pass">Пароль</label>
+        <input id="pass" name="password" type="password" required minlength="6" placeholder="минимум 6 символов" autocomplete="current-password">
+      </div>
+
+      <button class="btn btn-main" id="submitBtn" type="submit">Войти</button>
+      <button class="link" id="resetBtn" type="button">Забыл пароль</button>
+
+      <div class="split">или</div>
+
+      <button class="btn btn-ghost" id="googleBtn" type="button">
+        <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true">
+          <path fill="#4285F4" d="M45 24.5c0-1.6-.1-2.8-.4-4H24v7.3h12c-.2 2-1.5 5-4.4 7l6.7 5.2C42.2 36.3 45 31 45 24.5z"/>
+          <path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-6.9-5.4c-1.9 1.3-4.3 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-7.1 5.5C8.1 41 15.4 46 24 46z"/>
+          <path fill="#FBBC05" d="M11.5 28.4c-.5-1.4-.7-2.9-.7-4.4s.3-3 .7-4.4l-7.1-5.5C2.9 17 2 20.4 2 24s.9 7 2.4 9.9l7.1-5.5z"/>
+          <path fill="#EA4335" d="M24 10.2c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 4 29.9 2 24 2 15.4 2 8.1 7 4.4 14.1l7.1 5.5C13.3 14.3 18.2 10.2 24 10.2z"/>
+        </svg>
+        Продолжить с Google
+      </button>
+
+      <div class="note" id="note"></div>
+    </form>
+
+    <div class="lobby" id="lobby">
+      <h2 class="hello" id="hello">—</h2>
+      <p class="mail" id="mail"></p>
+
+      <div class="stats">
+        <div class="stat"><b id="sPoints">0</b><span>очки</span></div>
+        <div class="stat"><b id="sKills">0</b><span>убийства</span></div>
+        <div class="stat"><b id="sCases">0</b><span>кейсы</span></div>
+      </div>
+
+      <button class="btn btn-main" id="playBtn" type="button" disabled>Найти матч</button>
+      <button class="link" id="outBtn" type="button">Выйти из аккаунта</button>
+
+      <div class="note ok show" style="margin-top:18px">
+        Аккаунт работает. Дальше сюда подключим комнату на 4 игроков и саму карту.
+      </div>
+    </div>
+  </section>
+
+  <div class="setup" id="setup">
+    <b>Осталось вписать ключи Firebase.</b><br>
+    Консоль Firebase → Project settings → «Your apps» → Web app. Скопируй объект <code>firebaseConfig</code>
+    и вставь его в файл <code>js/config.js</code>.<br><br>
+    Там же: Authentication → Sign-in method → включи «Email/Password» и «Google».
+    Затем Firestore Database → Create database.
+  </div>
+
+</div>
+
+<script type="module" src="js/auth-screen.js"></script>
+</body>
+</html>
