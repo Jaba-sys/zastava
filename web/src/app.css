@@ -1,0 +1,2712 @@
+/* ---------------------------------------------------------------------------
+   Палитра MyPeal: тёплый графит + латунь колокола.
+   Тёмная тема — по умолчанию (значения прямо в :root), светлая включается
+   атрибутом data-theme="light" на <html> (см. web/src/utils/theme.js).
+   Всё, что зависит от темы, задаётся ТОЛЬКО переменными отсюда — иначе
+   вторая тема неизбежно расползается.
+--------------------------------------------------------------------------- */
+:root {
+  --bg: #16161a;            /* тёплый графит — фон приложения */
+  --bg-panel: #1f1f25;      /* панели, карточки, шапки */
+  --bg-input: #121216;      /* поля ввода и "утопленные" поверхности */
+  --accent: #ffb02e;        /* латунь — цвет самого колокола */
+  --accent-soft: rgba(255, 176, 46, 0.16);
+  --accent-2: #3a3129;      /* свои сообщения — тёплая тень от лампы */
+  --on-accent: #1a1206;     /* текст на янтарной кнопке */
+  --text: #eeeae4;
+  --muted: #9b948b;
+  --error: #ff6b5c;
+  --border: #33323a;
+  --hover: rgba(255, 255, 255, 0.06);   /* лёгкая подсветка при наведении */
+  --raised: rgba(255, 255, 255, 0.09);  /* приподнятые элементы поверх фона */
+  --overlay: rgba(10, 9, 8, 0.66);      /* затемнение под модалками */
+  --scrim: rgba(22, 22, 26, 0.85);      /* полупрозрачные полосы поверх фото */
+  --shadow: rgba(0, 0, 0, 0.5);
+  --pattern-ink: 255, 255, 255;         /* чернила узоров обоев (rgb-тройка) */
+  --accent-border: rgba(255, 176, 46, 0.35);
+  --success: #4ecf86;       /* онлайн, принять звонок */
+  --link: #ffd08a;          /* ссылки в сообщениях, галочка "прочитано" */
+  --magic: #d08bff;         /* подарки */
+  --magic-soft: rgba(208, 139, 255, 0.14);
+  --magic-border: rgba(208, 139, 255, 0.35);
+  /* Бегущие буквы логотипа на экране загрузки. */
+  --logo-1: #ffb02e;
+  --logo-2: #ffd27a;
+  --logo-3: #ff8a3d;
+  --logo-4: #e0662b;
+  --wall-star: 255, 214, 10;   /* обои "звёзды" */
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+:root[data-theme="light"] {
+  --bg: #f5f2ee;            /* тёплый светлый, а не голубоватый */
+  --bg-panel: #ffffff;
+  --bg-input: #faf7f3;
+  --accent: #d98200;        /* тот же свет, но темнее — чтобы читалось на белом */
+  --accent-soft: rgba(217, 130, 0, 0.14);
+  --accent-2: #ffe7c2;      /* свои сообщения — тёплый янтарный блик */
+  --on-accent: #211806;
+  --text: #211d18;
+  --muted: #6f675e;
+  --error: #c93a2c;
+  --border: #e3ddd4;
+  --hover: rgba(40, 30, 20, 0.05);
+  --raised: rgba(40, 30, 20, 0.07);
+  --overlay: rgba(35, 26, 18, 0.42);
+  --scrim: rgba(255, 255, 255, 0.88);
+  --shadow: rgba(60, 45, 30, 0.16);
+  --pattern-ink: 40, 30, 20;
+  --accent-border: rgba(217, 130, 0, 0.35);
+  --success: #1f9d55;
+  --link: #9a5b00;
+  --magic: #8d3fd4;
+  --magic-soft: rgba(141, 63, 212, 0.12);
+  --magic-border: rgba(141, 63, 212, 0.35);
+  --logo-1: #d98200;
+  --logo-2: #b8690a;
+  --logo-3: #d2561b;
+  --logo-4: #a13f12;
+  --wall-star: 201, 140, 0;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Ссылки без своего класса (react-router <Link> на экранах входа,
+   регистрации, настроек). Браузерный синий по умолчанию на тёмном фоне
+   почти не читается, поэтому задаём цвет здесь, один раз и переменной —
+   иначе в одной из тем ссылки неизбежно пропадают. */
+a:not([class]) {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:not([class]):hover { text-decoration: underline; }
+
+.center-screen {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 24px;
+}
+
+.auth-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+}
+
+.auth-card h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+  line-height: 1.3;
+  color: var(--accent);
+}
+
+.subtitle { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+
+label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+
+input, textarea {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 12px;
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+}
+
+input:focus, textarea:focus { border-color: var(--accent); }
+
+/* Выпадающие списки браузер рисует по-своему, и рядом с нашими полями они
+   выглядели чужими. Приводим к тому же виду: та же рамка, тот же радиус,
+   та же высота — со своей стрелкой, потому что стандартную снимает
+   appearance: none. */
+select {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 32px 11px 12px;
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+select:focus { border-color: var(--accent); }
+
+button {
+  margin-top: 20px;
+  width: 100%;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled { opacity: 0.5; cursor: default; }
+
+button.secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+button.link-btn {
+  width: auto;
+  background: none;
+  color: var(--accent);
+  margin: 0;
+  padding: 0;
+  font-weight: 500;
+}
+
+/* Значки в шапке чата (звонок, участники, меню) — это основные действия
+   экрана, а были обычными link-btn размером со строку текста: попасть по ним
+   пальцем на телефоне почти невозможно. Делаем полноценную цель нажатия
+   (рекомендованный минимум — примерно 44px) и подсветку под пальцем, чтобы
+   было видно, что нажатие засчиталось. */
+.chat-header-actions .link-btn {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21px;
+  line-height: 1;
+  border-radius: 50%;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+.chat-header-actions .link-btn:hover:not(:disabled) { background: var(--hover); }
+.chat-header-actions .link-btn:active:not(:disabled) { transform: scale(0.9); }
+.chat-header-actions .link-btn:disabled { opacity: 0.4; }
+
+/* Кнопка необратимого действия (удалить группу). Красная заливка, а не просто
+   красный текст: такое действие должно выглядеть иначе, чем всё остальное на
+   экране, иначе по нему промахиваются. */
+button.danger-btn {
+  background: var(--error);
+  color: #fff;
+  border-color: var(--error);
+}
+button.danger-btn:disabled { opacity: 0.6; }
+
+.error { color: var(--error); font-size: 13px; margin-top: 10px; }
+.info { color: var(--accent); font-size: 13px; margin-top: 10px; }
+.muted { color: var(--muted); font-size: 13px; }
+
+.switch { margin-top: 18px; font-size: 13px; text-align: center; color: var(--muted); }
+.switch a { color: var(--accent); }
+
+.tag-input {
+  display: flex;
+  align-items: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 12px;
+}
+.tag-input span { color: var(--muted); }
+.tag-input input { border: none; padding: 11px 4px; }
+
+.suggestions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.chip {
+  width: auto;
+  margin: 0;
+  background: var(--accent-2);
+  color: var(--text);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+/* Приглашение "не из контактов" в CreateGroup.jsx — отличаем визуально от
+   контактов, добавляемых сразу. */
+.chip.invite-chip {
+  background: transparent;
+  border: 1px dashed var(--accent);
+}
+
+.app-shell {
+  /* 100vh на мобильных браузерах считается по высоте экрана без учёта
+     панели адреса/кнопок снизу — из-за этого нижнее меню утыкалось прямо
+     в эту панель и перекрывалось ей. 100dvh пересчитывается под реально
+     видимую область и решает это (старые браузеры просто игнорируют
+     вторую строку и остаются на 100vh). */
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--bg);
+}
+
+.app-content { flex: 1; overflow-y: auto; }
+
+.panel { padding: 20px; }
+.panel h2 { margin-top: 0; }
+
+.bottom-nav {
+  display: flex;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+  /* Отступ под системную полосу-индикатор снизу экрана (iPhone) и под
+     возможную панель браузера, чтобы кнопки меню не перекрывались ей и
+     были удобны для нажатия. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+/* Значки меню + плавные "пружинистые" переходы при переключении вкладки —
+   как в Телеграме: иконка чуть подрастает и меняет цвет с лёгким отскоком
+   (cubic-bezier с "перелётом" через 1), а не мгновенно дёргается. */
+.bottom-nav a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  text-align: center;
+  padding: 8px 0 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 11px;
+  transition: color 0.25s ease, transform 0.15s ease;
+}
+.bottom-nav a svg {
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.25s ease;
+}
+.bottom-nav a.active { color: var(--accent); font-weight: 600; }
+.bottom-nav a.active svg { transform: scale(1.15) translateY(-1px); }
+.bottom-nav a:active { transform: scale(0.94); }
+.bottom-nav a:active svg { transform: scale(0.88); }
+
+.search-row { display: flex; gap: 8px; }
+.search-row input { flex: 1; }
+.search-row button { width: auto; margin: 0; padding: 11px 18px; }
+
+/* Строка создания ссылки-приглашения: срок + адресат + кнопка. На узком
+   экране втроём они не помещаются, поэтому переносим по строкам, а не
+   сжимаем до нечитаемого. */
+.link-row { flex-wrap: wrap; }
+.link-row select { flex: 1 1 150px; width: auto; }
+.link-row input { flex: 1 1 150px; }
+.link-row button { flex: 1 1 auto; }
+
+/* Живые подсказки при поиске по тегу (см. utils/tagSearch.js) — выпадающий
+   список прямо под строкой поиска, как автодополнение в Telegram. */
+.suggestions-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+.suggestion-row {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.suggestion-row:last-child { border-bottom: none; }
+.suggestion-row:hover { background: var(--accent-2); }
+
+.user-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 14px;
+}
+.user-card button { width: auto; margin: 0; padding: 8px 14px; font-size: 13px; }
+/* Переключатель внутри карточки: правило .user-card button специфичнее, чем
+   .toggle-switch, и раздувало тумблер отступами до неузнаваемости. */
+.user-card button.toggle-switch { width: 44px; height: 24px; padding: 0; }
+/* Длинное имя не должно выдавливать себя в столбик из одной буквы. */
+.user-card > div:first-child { min-width: 0; }
+
+/* Карточка ссылки-приглашения. Кнопок две, и рядом с текстом на телефоне они
+   ужимают его до нечитаемого столбца — поэтому кладём их отдельной строкой
+   под описанием. */
+.link-card { flex-direction: column; align-items: stretch; gap: 10px; }
+.link-card-actions { display: flex; gap: 8px; }
+.link-card-actions button { flex: 1; }
+
+.row-buttons { display: flex; gap: 8px; }
+
+.stars-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 8px;
+  padding: 1px 6px;
+}
+
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.chat-row-body { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.chat-row-body span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.avatar {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.avatar-photo-img {
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-online-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--success);
+  border: 2px solid var(--bg-panel);
+}
+
+.chat-window {
+  height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  /* Отступ под чёлку/Dynamic Island и системную строку статуса сверху —
+     без него шапка чата (в отличие от .mobile-topbar) вылезала прямо под
+     системные элементы, и кнопку "назад" было не задеть пальцем. */
+  padding-top: calc(14px + env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.chat-header-back-btn {
+  /* Была просто узкая стрелка без отступов — на телефоне (особенно в PWA
+     без адресной строки браузера сверху) в неё почти невозможно попасть
+     пальцем. Делаем большую квадратную область нажатия (по рекомендациям
+     Apple — не меньше 44x44pt) прямо по центру символа стрелки. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -8px 0 -8px -10px;
+  font-size: 26px;
+  line-height: 1;
+  flex-shrink: 0;
+  border-radius: 10px;
+}
+.chat-header-back-btn:active {
+  background: var(--accent-2);
+}
+.chat-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.presence {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.presence-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.presence.online { color: var(--success); }
+.presence.online .presence-dot { background: var(--success); }
+.verified-label { font-size: 12px; color: var(--accent); }
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* Фон переписки (см. ProfileView.jsx -> "Фон переписки" и
+   profile.chatWallpaper) — чисто CSS-паттерны, без картинок, чтобы не
+   тянуть лишние файлы; накладываются под пузырьки сообщений. */
+.messages.wallpaper-dots {
+  background-image: radial-gradient(circle, rgba(var(--pattern-ink), 0.07) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.messages.wallpaper-diagonal {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(var(--pattern-ink), 0.045) 0,
+    rgba(var(--pattern-ink), 0.045) 2px,
+    transparent 2px,
+    transparent 14px
+  );
+}
+.messages.wallpaper-grid {
+  background-image: linear-gradient(rgba(var(--pattern-ink), 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--pattern-ink), 0.05) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.messages.wallpaper-stars {
+  background-image: radial-gradient(circle, rgba(var(--wall-star), 0.25) 1px, transparent 1.6px),
+    radial-gradient(circle, rgba(var(--wall-star), 0.16) 1px, transparent 1.6px);
+  background-size: 60px 60px, 90px 90px;
+  background-position: 0 0, 30px 40px;
+}
+.wallpaper-swatch-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.wallpaper-swatch {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.wallpaper-swatch.active { border-color: var(--accent); }
+.wallpaper-swatch:disabled { opacity: 0.6; cursor: default; }
+
+/* Превью паттерна прямо на кнопке-свотче — заметно контрастнее версий,
+   которые накладываются под пузырьки сообщений (там фон уже тёмный сам по
+   себе, а тут его нужно разглядеть на маленьком квадрате). */
+.wallpaper-swatch.wallpaper-dots {
+  background-image: radial-gradient(circle, rgba(var(--pattern-ink), 0.55) 1.6px, transparent 1.6px);
+  background-size: 10px 10px;
+}
+.wallpaper-swatch.wallpaper-diagonal {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(var(--pattern-ink), 0.4) 0,
+    rgba(var(--pattern-ink), 0.4) 3px,
+    transparent 3px,
+    transparent 9px
+  );
+}
+.wallpaper-swatch.wallpaper-grid {
+  background-image: linear-gradient(rgba(var(--pattern-ink), 0.35) 1.5px, transparent 1.5px),
+    linear-gradient(90deg, rgba(var(--pattern-ink), 0.35) 1.5px, transparent 1.5px);
+  background-size: 11px 11px;
+}
+.wallpaper-swatch.wallpaper-stars {
+  background-image: radial-gradient(circle, rgba(var(--wall-star), 0.9) 1.6px, transparent 2px),
+    radial-gradient(circle, rgba(var(--wall-star), 0.6) 1.6px, transparent 2px);
+  background-size: 16px 16px, 22px 22px;
+  background-position: 0 0, 8px 10px;
+}
+.wallpaper-price {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--scrim);
+  border-radius: 6px;
+  padding: 1px 4px;
+}
+
+/* Значок "выдано администрацией бесплатно" — на стикерах и фонах переписки
+   (см. utils/adminGrants.js, ShopView.jsx -> isGrantedByAdmin). Тот же угол,
+   что и у .wallpaper-price/.sticker-price, только сверху-слева, чтобы не
+   перекрывались. */
+.granted-badge {
+  position: absolute;
+  left: 3px;
+  top: 2px;
+  font-size: 11px;
+  line-height: 1;
+  background: var(--scrim);
+  border-radius: 6px;
+  padding: 1px 3px;
+}
+.wallpaper-photo-placeholder {
+  font-size: 20px;
+  opacity: 0.8;
+}
+
+/* Новые "круче" фоны — волны, конфетти, аврора (см. utils/wallpapers.js).
+   "custom" (своя фотография) не рисуется CSS-паттерном — задаётся инлайн-
+   стилем (background-image: url(...)), см. ChatWindow.jsx/ShopView.jsx. */
+.messages.wallpaper-waves {
+  background-image:
+    radial-gradient(ellipse 60px 14px at 0 0, rgba(78, 164, 245, 0.10) 40%, transparent 42%),
+    radial-gradient(ellipse 60px 14px at 60px 20px, rgba(78, 164, 245, 0.10) 40%, transparent 42%);
+  background-size: 120px 40px;
+}
+.messages.wallpaper-confetti {
+  background-image:
+    radial-gradient(circle, rgba(255, 92, 138, 0.22) 1.4px, transparent 1.6px),
+    radial-gradient(circle, rgba(78, 164, 245, 0.22) 1.4px, transparent 1.6px),
+    radial-gradient(circle, rgba(57, 217, 138, 0.22) 1.4px, transparent 1.6px),
+    radial-gradient(circle, rgba(255, 210, 61, 0.22) 1.4px, transparent 1.6px);
+  background-size: 46px 46px, 54px 54px, 38px 38px, 62px 62px;
+  background-position: 0 0, 20px 10px, 10px 30px, 35px 5px;
+}
+.messages.wallpaper-aurora {
+  background-image:
+    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(124, 92, 255, 0.16), transparent 60%),
+    radial-gradient(ellipse 55% 35% at 80% 30%, rgba(57, 217, 138, 0.14), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 50% 85%, rgba(78, 164, 245, 0.14), transparent 60%);
+  background-size: 200% 200%;
+  animation: wallpaper-aurora-drift 18s ease-in-out infinite;
+}
+@keyframes wallpaper-aurora-drift {
+  0%, 100% { background-position: 0% 0%; }
+  50% { background-position: 100% 60%; }
+}
+
+.wallpaper-swatch.wallpaper-waves {
+  background-image:
+    radial-gradient(ellipse 16px 5px at 0 6px, rgba(var(--pattern-ink), 0.55) 40%, transparent 42%),
+    radial-gradient(ellipse 16px 5px at 16px 16px, rgba(var(--pattern-ink), 0.55) 40%, transparent 42%);
+  background-size: 32px 22px;
+}
+.wallpaper-swatch.wallpaper-confetti {
+  background-image:
+    radial-gradient(circle, #ff5c8a 2px, transparent 2.2px),
+    radial-gradient(circle, #4ea4f5 2px, transparent 2.2px),
+    radial-gradient(circle, #39d98a 2px, transparent 2.2px),
+    radial-gradient(circle, #ffd23d 2px, transparent 2.2px);
+  background-size: 16px 16px, 20px 20px, 14px 14px, 22px 22px;
+  background-position: 2px 2px, 10px 6px, 6px 14px, 16px 3px;
+}
+.wallpaper-swatch.wallpaper-aurora {
+  background-image: linear-gradient(120deg, #7c5cff, #4ea4f5, #39d98a);
+  background-size: 200% 200%;
+  animation: wallpaper-aurora-drift 6s ease-in-out infinite;
+}
+.wallpaper-swatch.wallpaper-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--hover);
+}
+.bubble-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 75%;
+}
+.bubble-row.mine { align-self: flex-end; flex-direction: row-reverse; }
+.bubble-row.theirs { align-self: flex-start; }
+/* Аватарка автора сообщения в группах (см. ChatWindow.jsx) — не должна
+   сжиматься флексом наравне с самим пузырём сообщения. */
+.bubble-row .avatar { flex-shrink: 0; }
+
+.bubble {
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.bubble-sender {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+.bubble.mine {
+  background: var(--accent-2);
+  border-bottom-right-radius: 4px;
+}
+.bubble.theirs {
+  background: var(--bg-panel);
+  border-bottom-left-radius: 4px;
+}
+.msg-link {
+  color: var(--link);
+  text-decoration: underline;
+  word-break: break-all;
+}
+.bubble.theirs .msg-link { color: var(--accent); }
+.bubble-delete {
+  width: auto;
+  margin: 0;
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.bubble-row:hover .bubble-delete { opacity: 1; }
+.bubble-delete:hover { color: var(--error); }
+.bubble-edit {
+  width: auto;
+  margin: 0;
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.bubble-row:hover .bubble-edit { opacity: 1; }
+.bubble-edit:hover { color: var(--accent); }
+.bubble-forward {
+  width: auto;
+  margin: 0;
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.bubble-row:hover .bubble-forward { opacity: 1; }
+.bubble-forward:hover { color: var(--accent); }
+.bubble-edited-tag {
+  font-size: 11px;
+  color: var(--muted);
+  margin-right: 4px;
+}
+.forwarded-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 3px;
+  font-style: italic;
+}
+.forwarded-label b { font-style: normal; }
+.edit-message-row textarea {
+  width: 100%;
+  margin: 0;
+  font: inherit;
+  resize: vertical;
+}
+.edit-message-row .row-buttons button {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.locked-command-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.locked-command-row button {
+  width: auto;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.stiller-casino-row {
+  padding: 8px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0 0 6px;
+}
+.stiller-casino-row .row-buttons button {
+  width: auto;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.bot-script-editor {
+  width: 100%;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  tab-size: 2;
+}
+.compose-area {
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+/* Панель кнопок (стикеры/подарки, вложение, голосовое) НАД строкой ввода,
+   как в Telegram — иначе на маленьких экранах в самой строке ввода не
+   хватает места. */
+.compose-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+.toolbar-btn {
+  width: auto;
+  margin: 0;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.toolbar-btn:hover { background: var(--accent-2); }
+.send-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px 12px;
+}
+.send-row input { flex: 1; }
+.send-row button { width: auto; margin: 0; padding: 11px 18px; }
+
+/* Строка "поле(я) + кнопка" в редакторе ботов (см. pages/MyBotsView.jsx) —
+   тот же приём, что и у .send-row/.search-row выше: без явного flex/width
+   на button его глобальные width:100%/margin-top:20px забирают почти всю
+   ширину строки, а не только input/select. */
+.bot-row { display: flex; gap: 8px; align-items: center; }
+.bot-row input { flex: 1; }
+.bot-row select { flex: 0 0 auto; width: auto; }
+.bot-row button { width: auto; margin: 0; padding: 10px 14px; flex: 0 0 auto; }
+
+.mic-btn {
+  background: var(--accent-2);
+  flex-shrink: 0;
+}
+.chat-header-avatar-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+/* Карточка просмотра профиля собеседника (ChatWindow.jsx) — сознательно
+   сделана в духе Telegram/WhatsApp "О контакте": крупный аватар и имя по
+   центру, ряд круглых кнопок быстрых действий под ними, затем данные
+   (тег/день рождения/о себе) отдельной карточкой со строками-разделителями,
+   как "мобильный"/"день рождения" в Telegram. */
+.profile-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  position: relative;
+  padding-top: 4px;
+}
+.profile-card .stars-banner { margin-top: 8px; }
+.profile-card-close {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.profile-card-close:hover { color: var(--text); border-color: var(--accent); }
+.profile-card-name {
+  margin: 10px 0 0;
+  font-size: 20px;
+}
+.profile-card-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  width: 100%;
+  justify-content: center;
+}
+.profile-card-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  min-width: 76px;
+  margin: 0;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 14px;
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.profile-card-action:hover { background: var(--accent-2); }
+.profile-card-action:disabled { opacity: 0.5; cursor: default; background: var(--bg); }
+.profile-card-action-icon { font-size: 18px; }
+.profile-card-info {
+  width: 100%;
+  margin-top: 18px;
+  background: var(--bg);
+  border-radius: 14px;
+  padding: 4px 14px;
+  text-align: left;
+}
+.profile-card-info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0;
+}
+.profile-card-info-row + .profile-card-info-row { border-top: 1px solid var(--border); }
+.profile-card-info-label { font-size: 12px; color: var(--muted); }
+.profile-card-info-value { font-size: 15px; word-break: break-word; }
+
+.recording-indicator {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--error);
+  font-size: 14px;
+}
+
+.voice-bubble-audio {
+  max-width: 220px;
+  height: 34px;
+}
+
+.chat-image {
+  max-width: 220px;
+  max-height: 280px;
+  border-radius: 10px;
+  display: block;
+  cursor: zoom-in;
+}
+
+.file-link {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.file-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.file-pending .link-btn {
+  width: auto;
+  font-size: 12px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 14px;
+}
+
+.toggle-switch {
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--border);
+  border: none;
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toggle-switch.on { background: var(--accent); }
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg-panel);
+  box-shadow: 0 1px 3px var(--shadow);
+  transition: transform 0.15s;
+}
+.toggle-switch.on .toggle-knob { transform: translateX(20px); }
+
+.language-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.language-option {
+  width: auto;
+  margin: 0;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+.language-option.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+/* /admin рендерится отдельно от <Layout /> (см. App.jsx) — своей шапки/меню
+   у него нет, поэтому эта строка — единственный способ вернуться в сам
+   мессенджер или выйти из аккаунта, не трогая адрес в браузере руками. */
+.admin-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.admin-top-bar a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 14px;
+}
+.admin-top-bar button {
+  width: auto;
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+/* Консоль администратора (см. pages/AdminPanel.jsx) — стилизована под
+   терминал (Windows console/старый DOS): чёрный фон, моноширинный шрифт,
+   вывод сверху, строка ввода с "промптом" снизу, всегда прижатой к низу
+   экрана (в отличие от .panel, которая скроллится вместе со страницей). */
+.console-page {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  padding: 16px;
+  background: #0c0c0c;
+  color: #d4d4d4;
+  box-sizing: border-box;
+}
+.console-top-bar {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+}
+.console-title {
+  font-family: "Consolas", "Menlo", "Courier New", monospace;
+  font-weight: 700;
+  color: #4ec9b0;
+  font-size: 14px;
+}
+.console-screen {
+  flex: 1;
+  overflow-y: auto;
+  background: #000;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 12px 14px;
+  cursor: text;
+}
+.console-line {
+  margin: 0 0 6px;
+  padding: 0;
+  font-family: "Consolas", "Menlo", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #d4d4d4;
+}
+.console-line-input { color: #ffffff; font-weight: 600; }
+.console-line-error { color: #f14c4c; }
+.console-line-info { color: #7fb3ff; }
+.console-input-row {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: #000;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+}
+.console-prompt {
+  font-family: "Consolas", "Menlo", "Courier New", monospace;
+  font-size: 13px;
+  color: #4ec9b0;
+  white-space: nowrap;
+}
+.console-input {
+  flex: 1;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #ffffff;
+  font-family: "Consolas", "Menlo", "Courier New", monospace;
+  font-size: 13px;
+}
+.console-input:focus { outline: none; box-shadow: none; }
+
+.admin-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.admin-tabs button {
+  width: auto;
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.admin-chat-messages {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.admin-message-row {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.admin-gifts-list {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.admin-gift-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.admin-gift-row button { width: auto; margin: 0; padding: 6px 12px; font-size: 12px; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+.modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  width: 90%;
+  max-width: 360px;
+  /* Длинные окна (управление группой, действия с чатом, выбор участников
+     звонка) не влезают в экран целиком — особенно на телефоне и при
+     масштабировании. Раньше низ такого окна просто обрезался, и до кнопок
+     внизу нельзя было добраться. */
+  max-height: 85vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.forward-chat-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+.forward-chat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.forward-chat-row:hover { background: var(--hover); }
+.forward-chat-row input { width: auto; margin: 0; }
+
+/* Звонки (см. components/CallOverlay.jsx) — поверх всего, включая обычные
+   .modal-backdrop, поэтому чуть выше z-index. */
+.call-overlay { z-index: 30; }
+.call-modal { position: relative; text-align: center; padding: 32px 24px; }
+.call-minimize-btn {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.call-avatar {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 700;
+}
+.call-actions { display: flex; justify-content: center; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+.call-btn {
+  width: auto;
+  min-width: 84px;
+  height: auto;
+  margin-top: 0;
+  padding: 14px 20px;
+  border-radius: 999px;
+  background: var(--accent-2);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.call-btn-accept { background: var(--success); color: var(--on-accent); }
+.call-btn-decline { background: var(--error); color: var(--on-accent); }
+.call-btn-active { background: var(--accent); color: var(--on-accent); }
+.call-note { opacity: 0.85; font-style: italic; }
+/* Пропущенный/отклонённый звонок — как в Telegram/WhatsApp, красным, чтобы
+   сразу бросался в глаза среди обычной переписки. Состоявшийся звонок —
+   обычным приглушённым цветом, это не "проблема", о которой нужно кричать. */
+.call-note-missed { color: var(--error); opacity: 1; }
+
+/* Полноэкранное видео звонка (платная функция, см. utils/videoCalls.js) —
+   не модалка на подложке, а отдельный полноэкранный "слой" на весь
+   вьюпорт (как отдельная вкладка/приложение, см. обсуждение с
+   пользователем) — поэтому кроп видео теперь всегда естественный
+   (object-fit: cover на реальный размер экрана), а не в стиснутую
+   карточку фиксированных пропорций (это и было причиной "у собеседника
+   показывает неправильно" — старая карточка 3:4 обрезала кадр с типичной
+   альбомной веб-камеры). */
+.call-video-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 33;
+  background: #000;
+  overflow: hidden;
+}
+.call-video-remote {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+.call-video-remote-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #1c2733, #05090d);
+}
+.call-video-remote-placeholder .call-avatar {
+  width: 120px;
+  height: 120px;
+  font-size: 44px;
+  margin: 0;
+}
+.call-video-local-pip {
+  position: absolute;
+  top: calc(66px + env(safe-area-inset-top));
+  right: 14px;
+  width: 104px;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  z-index: 2;
+  /* Своя камера отзеркалена, как в любом видеозвонке/фронталке — иначе
+     собственные жесты/текст на фоне выглядят непривычно вывернутыми. */
+  transform: scaleX(-1);
+}
+.call-video-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: calc(14px + env(safe-area-inset-top)) 16px 40px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.65), transparent);
+}
+.call-video-topbar .call-minimize-btn { position: static; }
+.call-video-heading {
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+.call-video-name { font-size: 16px; font-weight: 600; }
+.call-video-timer { font-size: 13px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.call-video-error {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 110px;
+  z-index: 2;
+}
+.call-video-bottombar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 40px 16px calc(24px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.65), transparent);
+}
+
+/* Свёрнутый идущий звонок — тонкая латунная полоса
+   сверху экрана (как индикатор активного звонка в iOS/"вернуться к
+   звонку"), а не плавающая плашка снизу — так заметнее, что разговор
+   продолжается, и не перекрывает нижнее меню. Клик по полосе (кроме
+   кнопки завершения) снова разворачивает звонок на весь экран. */
+.call-top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 34;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(9px + env(safe-area-inset-top)) 14px 9px;
+  background: linear-gradient(90deg, #f59200, #ffd27a, #f59200);
+  background-size: 220% 100%;
+  animation: call-top-bar-shimmer 3.5s linear infinite;
+  color: #1a1206;
+  cursor: pointer;
+  box-shadow: 0 4px 16px var(--shadow);
+}
+@keyframes call-top-bar-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 220% 50%; }
+}
+.call-top-bar-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #1a1206;
+  animation: call-top-bar-pulse 1.4s ease-in-out infinite;
+}
+@keyframes call-top-bar-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+.call-top-bar-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.call-top-bar-timer { font-size: 12px; opacity: 0.9; font-variant-numeric: tabular-nums; }
+.call-top-bar-hangup {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(26, 18, 6, 0.2);
+  color: #1a1206;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Пока плашка .call-top-bar показана (см. Layout.jsx -> callBarVisible),
+   отодвигаем весь остальной интерфейс вниз ровно на её высоту — иначе она
+   (непрозрачная, position: fixed, поверх всего) просто закрывает собой
+   самый верх страницы: шапку сайдбара с логотипом MyPeal на десктопе,
+   мобильную шапку и т.д. — тот текст не "невидим" из-за цвета, он был
+   буквально скрыт под плашкой. */
+.app-shell.has-call-bar,
+.app-shell-desktop.has-call-bar {
+  padding-top: calc(40px + env(safe-area-inset-top));
+}
+
+/* Всплывающая плашка "новое сообщение" (см. hooks/useMessageNotifications.js,
+   Layout.jsx) — показывается вместо браузерного уведомления, пока вкладка
+   MyPeal открыт и в фокусе, а человек смотрит НЕ на тот чат, куда пришло
+   сообщение. Сама по себе временная (авто-скрывается), поэтому в отличие от
+   .call-top-bar не отодвигает остальной интерфейс — просто наплывает сверху. */
+.incoming-message-banner {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 38;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px var(--shadow);
+  cursor: pointer;
+  animation: incoming-message-banner-in 0.2s ease-out;
+}
+@keyframes incoming-message-banner-in {
+  from { transform: translate(-50%, -12px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}
+.incoming-message-banner-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.incoming-message-banner-text b {
+  font-size: 13px;
+  color: var(--accent);
+}
+.incoming-message-banner-text span {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.incoming-message-banner-close {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-2);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ------------------------------------------------------------------ */
+/* Десктопный режим (широкий экран) — список чатов постоянно слева,   */
+/* справа открытый чат/друзья/профиль, вместо узкой мобильной колонки  */
+/* на весь экран.                                                      */
+/* ------------------------------------------------------------------ */
+.app-shell-desktop {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  background: var(--bg);
+}
+
+.app-shell-desktop .sidebar {
+  width: 360px;
+  min-width: 300px;
+  max-width: 420px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+}
+
+.app-shell-desktop .sidebar-nav {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.app-shell-desktop .sidebar-nav a {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  text-align: center;
+  padding: 14px 0;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  transition: color 0.25s ease;
+}
+.app-shell-desktop .sidebar-nav a svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.25s ease;
+}
+.app-shell-desktop .sidebar-nav a.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.app-shell-desktop .sidebar-nav a.active svg { transform: scale(1.15); }
+
+.app-shell-desktop .sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.app-shell-desktop .main-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.empty-pane {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 15px;
+  padding: 24px;
+  text-align: center;
+}
+
+@media (min-width: 860px) {
+  .app-shell-desktop .main-pane .chat-window {
+    max-width: none;
+    margin: 0;
+  }
+  .app-shell-desktop .main-pane .panel {
+    max-width: 640px;
+    margin: 0 auto;
+    width: 100%;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Логотип — слева вверху и на десктопе (шапка боковой панели), и на   */
+/* мобильном (отдельная узкая полоска сверху, скрыта внутри чата).     */
+/* ------------------------------------------------------------------ */
+.app-logo-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.app-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.app-logo img {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: block;
+}
+.app-logo span {
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+/* Кнопка-ссылка "скачать приложение для ПК" (см. Layout.jsx ->
+   DesktopAppLink) — отдельной строкой под названием, с текстом, а не просто
+   иконкой, чтобы её было заметно (а не терялась среди остальных элементов
+   шапки). Тусклая по умолчанию, подсвечивается акцентным цветом и рамкой
+   при наведении/фокусе — так понятно, что это кликабельная кнопка. */
+.app-logo-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+.app-logo-desktop-link {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.app-logo-ios-hint {
+  position: relative;
+}
+.app-logo-ios-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: 240px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 400;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+.app-logo-desktop-link span {
+  font-weight: 600;
+  font-size: 12px;
+  color: inherit;
+}
+.app-logo-desktop-link:hover,
+.app-logo-desktop-link:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-2);
+}
+/* Перебивает правило выше (обычный текст логотипа) — бейдж звёзд рядом с
+   логотипом должен выглядеть как маленькая жёлтая пилюля, а не как часть
+   заголовка MyPeal. */
+.app-logo .app-logo-stars {
+  margin-left: auto;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mobile-topbar {
+  padding: 12px 16px;
+  /* Отступ под чёлку/системные элементы сверху экрана. */
+  padding-top: calc(12px + env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Блокировка пользователя в личном чате.                              */
+/* ------------------------------------------------------------------ */
+.presence.blocked {
+  color: var(--error);
+}
+
+.unblock-btn {
+  width: auto;
+  margin: 4px 0 0;
+  padding: 5px 14px;
+  font-size: 12px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 8px;
+  display: block;
+}
+
+.chat-blocked-notice {
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.chat-actions-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.chat-actions-menu button {
+  width: 100%;
+  margin: 0;
+  text-align: left;
+}
+.chat-actions-menu button.danger {
+  background: var(--error);
+  color: #fff;
+  border-color: var(--error);
+}
+
+/* ------------------------------------------------------------------ */
+/* Звёзды: крупная плашка на странице "Чаты" (в дополнение к маленькому */
+/* значку в навигации) — см. ChatsList.jsx / ProfileView.jsx (магазин). */
+/* ------------------------------------------------------------------ */
+.chats-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.chats-title-row h2 { margin: 0; }
+
+.stars-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  padding: 6px 12px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Стикеры — SVG-иконка (см. stickers/Sticker.jsx) + модалка выбора    */
+/* (StickerPicker.jsx) + сетка покупки в магазине (ProfileView.jsx).    */
+/* ------------------------------------------------------------------ */
+.sticker-svg {
+  display: block;
+  overflow: visible;
+}
+
+.bubble-sticker {
+  background: transparent !important;
+  padding: 2px !important;
+}
+.bubble-stars-gift {
+  background: var(--accent-soft) !important;
+  border: 1px solid var(--accent-border);
+}
+.stars-gift-amount {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.gift-bubble-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.gift-bubble-price {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.sticker-modal { max-width: 420px; }
+
+/* ------------------------------------------------------------------ */
+/* Вкладки "Стикеры"/"Подарки" в StickerPicker.jsx.                    */
+/* ------------------------------------------------------------------ */
+.picker-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.picker-tab {
+  width: auto;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.picker-tab.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Подарки — витрина "Мои подарки" (ProfileView.jsx) и плашка счётчика */
+/* подарков в карточке профиля собеседника (ChatWindow.jsx).           */
+/* ------------------------------------------------------------------ */
+.profile-card-banners {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.profile-card-banners .stars-banner { margin-top: 0; }
+.gifts-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--magic);
+  background: var(--magic-soft);
+  border: 1px solid var(--magic-border);
+  border-radius: 12px;
+  padding: 6px 12px;
+}
+.gifts-showcase {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 10px;
+}
+.gift-showcase-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 6px;
+  text-align: center;
+}
+
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sticker-cell {
+  position: relative;
+  width: auto;
+  margin: 0;
+  padding: 8px 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.sticker-cell.owned { border-color: var(--accent-2); }
+.sticker-cell.equipped {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.sticker-cell:disabled { opacity: 0.6; cursor: default; }
+
+.sticker-price {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--scrim);
+  border-radius: 6px;
+  padding: 1px 4px;
+}
+
+/* Анимации стикеров — чем дороже уровень, тем больше анимированных     */
+/* частей и тем заметнее эффект (см. STICKER_TIER_PRICES в catalog.js). */
+@keyframes stk-flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.stk-flicker { animation: stk-flicker 1.4s ease-in-out infinite; transform-origin: center; }
+
+@keyframes stk-flicker-fast {
+  0%, 100% { opacity: 1; transform: scaleY(1); }
+  50% { opacity: 0.5; transform: scaleY(0.85); }
+}
+.stk-flicker-fast { animation: stk-flicker-fast 0.6s ease-in-out infinite; transform-origin: bottom; }
+
+@keyframes stk-spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.stk-spin-slow { animation: stk-spin-slow 4s linear infinite; transform-origin: center; }
+
+@keyframes stk-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.stk-bob { animation: stk-bob 1.6s ease-in-out infinite; }
+
+@keyframes stk-clap-left {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(18deg); }
+}
+.stk-clap-left { animation: stk-clap-left 0.5s ease-in-out infinite; transform-origin: right center; }
+
+@keyframes stk-clap-right {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-18deg); }
+}
+.stk-clap-right { animation: stk-clap-right 0.5s ease-in-out infinite; transform-origin: left center; }
+
+@keyframes stk-sparkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.7); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.stk-sparkle { animation: stk-sparkle 1.2s ease-in-out infinite; transform-origin: center; }
+.stk-sparkle-delay { animation: stk-sparkle 1.2s ease-in-out infinite; animation-delay: 0.6s; transform-origin: center; }
+
+@keyframes stk-confetti-1 {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(14px) rotate(180deg); opacity: 0.3; }
+}
+.stk-confetti-1 { animation: stk-confetti-1 1.1s ease-in infinite; }
+
+@keyframes stk-confetti-2 {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(18px) rotate(-160deg); opacity: 0.2; }
+}
+.stk-confetti-2 { animation: stk-confetti-2 1.3s ease-in infinite; animation-delay: 0.2s; }
+
+@keyframes stk-confetti-3 {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(10px) rotate(140deg); opacity: 0.2; }
+}
+.stk-confetti-3 { animation: stk-confetti-3 0.9s ease-in infinite; animation-delay: 0.4s; }
+
+@keyframes stk-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px) rotate(-3deg); }
+  75% { transform: translateX(3px) rotate(3deg); }
+}
+.stk-shake { animation: stk-shake 0.35s ease-in-out infinite; transform-origin: center; }
+
+@keyframes stk-hue {
+  from { filter: hue-rotate(0deg); }
+  to { filter: hue-rotate(360deg); }
+}
+.stk-hue { animation: stk-hue 3s linear infinite; }
+
+@keyframes stk-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.1); }
+}
+.stk-blink { animation: stk-blink 2.6s ease-in-out infinite; transform-origin: center; }
+
+@keyframes stk-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.stk-float { animation: stk-float 2.2s ease-in-out infinite; }
+
+@keyframes stk-glow {
+  0%, 100% { filter: drop-shadow(0 0 2px currentColor); }
+  50% { filter: drop-shadow(0 0 8px currentColor); }
+}
+.stk-glow { animation: stk-glow 1.5s ease-in-out infinite; }
+
+@keyframes stk-wing {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.5); }
+}
+.stk-wing { animation: stk-wing 0.4s ease-in-out infinite; transform-origin: top; }
+
+/* ------------------------------------------------------------------ */
+/* Косметика ника за звёзды (см. utils/cosmetics.js, NicknameText.jsx). */
+/* ------------------------------------------------------------------ */
+.nickname-effect { display: inline-block; }
+
+/* "jump" — волна: буквы поднимаются очень плавно и поочерёдно (см.
+   NicknameText.jsx -> animationDelay на каждой .nickname-jump-letter),
+   а не всё имя разом, как раньше. */
+@keyframes nickname-jump-letter {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.nickname-jump-letter {
+  display: inline-block;
+  animation: nickname-jump-letter 1.6s ease-in-out infinite;
+}
+
+@keyframes nickname-rainbow {
+  0% { color: var(--error); }
+  20% { color: #ff9f3d; }
+  40% { color: #ffd23d; }
+  60% { color: #39d98a; }
+  80% { color: #4ea4f5; }
+  100% { color: var(--error); }
+}
+.nickname-rainbow { animation: nickname-rainbow 3s linear infinite; font-weight: 700; }
+
+/* ------------------------------------------------------------------ */
+/* Магазин (ProfileView.jsx) — стикеры, эффект ника, цвет текста,      */
+/* аватар-стикер за звёзды.                                            */
+/* ------------------------------------------------------------------ */
+.shop-subtitle {
+  margin: 18px 0 4px;
+  font-size: 14px;
+}
+
+.shop-effect-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.shop-effect-cell {
+  width: auto;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.shop-effect-cell.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.color-swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+.color-swatch {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+}
+.color-swatch.active {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.shop-avatar-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 8px;
+}
+.shop-avatar-row .sticker-grid { flex: 1; margin-top: 0; }
+
+/* ------------------------------------------------------------------ */
+/* Флажок "Отправить анонимно" (StickerPicker.jsx) и "Закрепить"        */
+/* (AdminPanel.jsx) — обычный чекбокс с подписью в одну строку.         */
+/* ------------------------------------------------------------------ */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 2px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Карточка-ссылка "Профиль → Магазин" (ProfileView.jsx). */
+.shop-link-card {
+  display: block;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.shop-link-card:hover { border-color: var(--accent); }
+
+/* Закреплённое сообщение в "Системных сообщениях" (см. AdminPanel.jsx ->
+   AdminAnnouncements "Закрепить" и ChatWindow.jsx -> pinnedMessage). */
+.pinned-banner {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  backdrop-filter: blur(4px);
+}
+.pinned-banner-icon { flex-shrink: 0; }
+
+/* ------------------------------------------------------------------ */
+/* Более насыщенные анимации для дорогих стикеров/подарков — орбитальные */
+/* искры и усиленное свечение (см. Sticker.jsx/Gift.jsx tier 2-3).       */
+/* ------------------------------------------------------------------ */
+@keyframes stk-orbit {
+  from { transform: rotate(0deg) translateX(28px) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(28px) rotate(-360deg); }
+}
+.stk-orbit {
+  animation: stk-orbit 2.4s linear infinite;
+  transform-origin: center;
+}
+.stk-orbit-rev {
+  animation: stk-orbit 3.2s linear infinite reverse;
+  transform-origin: center;
+}
+
+@keyframes stk-glow-strong {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.12); }
+}
+.stk-glow-strong {
+  animation: stk-glow-strong 1.3s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes stk-shimmer-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.stk-shimmer-rotate {
+  animation: stk-shimmer-rotate 2.6s linear infinite;
+  transform-origin: center;
+}
+
+/* ------------------------------------------------------------------ */
+/* "Профиль" -> "Настройки" — значок-шестерёнка в заголовке (см.        */
+/* ProfileView.jsx/SettingsView.jsx).                                   */
+/* ------------------------------------------------------------------ */
+.profile-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.profile-view-header h2 { margin: 0; }
+.profile-settings-link {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  color: var(--text);
+  text-decoration: none;
+}
+.profile-settings-link:hover { background: var(--accent-2); }
+
+/* ------------------------------------------------------------------ */
+/* Время сообщения + статус "доставлено/прочитано" (одна/две галочки,   */
+/* как в WhatsApp) — см. MessageRow в ChatWindow.jsx. Показываем только */
+/* для СВОИХ сообщений; читаем через chats/{chatId}.lastReadAt.{uid}.   */
+/* ------------------------------------------------------------------ */
+.bubble-meta {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.bubble.theirs .bubble-meta { justify-content: flex-start; }
+.bubble-check {
+  letter-spacing: -2px;
+  color: inherit;
+}
+.bubble-check.read { color: var(--link); }
+
+/* ------------------------------------------------------------------ */
+/* Свайп по сообщению для ответа — см. MessageRow (ChatWindow.jsx):     */
+/* весь .bubble-row сдвигается через inline transform, а вот эта        */
+/* стрелка-подсказка проявляется поверх во время перетаскивания.        */
+/* ------------------------------------------------------------------ */
+.bubble-row {
+  position: relative;
+  transition: transform 0.15s ease-out;
+  touch-action: pan-y;
+}
+.swipe-reply-hint {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  opacity: 0.6;
+  color: var(--accent);
+  pointer-events: none;
+}
+.swipe-reply-hint.right { left: -26px; }
+.swipe-reply-hint.left { right: -26px; }
+
+@keyframes bubble-row-flash {
+  0%, 100% { background: transparent; }
+  30% { background: var(--accent-soft); }
+}
+.bubble-row-highlight { border-radius: 14px; animation: bubble-row-flash 1.2s ease-out; }
+
+/* Цитата отвечаемого сообщения — и внутри уже отправленного пузыря      */
+/* (m.replyTo), и в панели над строкой ввода, пока ответ ещё готовится   */
+/* (см. .reply-preview-bar ниже). Общий вид одинаковый — полоска слева   */
+/* + имя автора + короткий текст оригинала.                              */
+.reply-quote {
+  border-left: 3px solid var(--accent);
+  padding: 3px 8px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  background: var(--hover);
+  font-size: 12px;
+  cursor: pointer;
+}
+.reply-quote b { display: block; color: var(--accent); font-size: 12px; }
+.reply-quote-text {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+.bubble.mine .reply-quote { background: rgba(var(--pattern-ink), 0.1); }
+
+.reply-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+.reply-preview-body {
+  flex: 1;
+  min-width: 0;
+  border-left: 3px solid var(--accent);
+  padding: 2px 8px;
+}
+.reply-preview-body b { display: block; color: var(--accent); font-size: 12px; }
+.reply-preview-close {
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.reply-preview-close:hover { color: var(--text); }
+
+/* ------------------------------------------------------------------ */
+/* "Печатает…" — переиспользует .presence (см. выше), просто со своим   */
+/* цветом и лёгкой пульсацией вместо статичного текста.                 */
+/* ------------------------------------------------------------------ */
+.presence.typing { color: var(--accent); animation: typing-pulse 1.4s ease-in-out infinite; }
+@keyframes typing-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Карточка превью ссылки (см. components/LinkPreviewCard.jsx) — под     */
+/* текстом сообщения, если в нём есть ссылка и удалось получить         */
+/* og:title/og:image/og:description через api.microlink.io.             */
+/* ------------------------------------------------------------------ */
+.link-preview-card {
+  display: block;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(var(--pattern-ink), 0.07);
+  text-decoration: none;
+  color: inherit;
+}
+.link-preview-image {
+  height: 120px;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--bg);
+}
+.link-preview-body { padding: 8px 10px; }
+.link-preview-site {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.link-preview-title { font-size: 13px; font-weight: 600; margin-top: 2px; }
+.link-preview-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------ */
+/* "Очистить чат полностью у обоих" — запрос на обоюдное согласие (см.  */
+/* requestClearChat/respondClearRequest в ChatWindow.jsx). Тот же вид,   */
+/* что и .chat-blocked-notice, но с кнопками действия.                   */
+/* ------------------------------------------------------------------ */
+.clear-request-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--accent-border);
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Полноэкранная галерея фото (components/PhotoViewer.jsx) — поверх     */
+/* всего, включая звонок (см. .call-overlay / .call-video-stage /       */
+/* .call-top-bar выше), поэтому z-index ещё выше.                       */
+/* ------------------------------------------------------------------ */
+.photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(3, 6, 10, 0.97);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.photo-viewer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  flex-shrink: 0;
+  z-index: 1;
+}
+.photo-viewer-counter {
+  color: var(--muted);
+  font-size: 13px;
+}
+.photo-viewer-close {
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.photo-viewer-body {
+  flex: 1;
+  min-height: 0;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.photo-viewer-stage {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+}
+.photo-viewer-img {
+  max-width: 100%;
+  max-height: 100%;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+.photo-viewer-loading {
+  font-size: 28px;
+  color: var(--muted);
+}
+.photo-viewer-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--text);
+  font-size: 26px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.photo-viewer-arrow.left { left: 12px; }
+.photo-viewer-arrow.right { right: 12px; }
+.photo-viewer-arrow:disabled { opacity: 0.25; }
+/* Свайп для перелистывания/закрытия — жест в первую очередь для тача;
+   стрелки на десктопе всегда видны, на мобильном только занимают место
+   по краям, но не мешают (фото под ними по центру, крупных экранов это
+   не касается). */
+@media (max-width: 600px) {
+  .photo-viewer-arrow { display: none; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Мини-игры бота @stiller_bot — /kazik и колесо фортуны (см.           */
+/* ChatWindow.jsx -> StillerGameBanner/KazikResultBubble/               */
+/* WheelResultBubble, utils/stillerBot.js). Баннер "бот управляет этим  */
+/* чатом" — тот же паттерн, что и .clear-request-banner выше, но с      */
+/* акцентом под казино-тематику.                                        */
+/* ------------------------------------------------------------------ */
+.stiller-bot-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--magic-soft);
+  border-bottom: 1px solid var(--magic-border);
+  font-size: 13px;
+}
+.stiller-bot-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@keyframes stiller-spin-icon {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.stiller-bot-banner-icon {
+  display: inline-block;
+  animation: stiller-spin-icon 1.1s linear infinite;
+}
+@keyframes kazik-reel-shake {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(-3px); }
+  75% { transform: translateY(3px); }
+}
+.kazik-reels {
+  display: flex;
+  gap: 10px;
+  font-size: 34px;
+  justify-content: center;
+  padding: 4px 0;
+}
+.kazik-reels.spinning span {
+  display: inline-block;
+  animation: kazik-reel-shake 0.25s ease-in-out infinite;
+}
+.kazik-reels.spinning span:nth-child(2) { animation-delay: 0.08s; }
+.kazik-reels.spinning span:nth-child(3) { animation-delay: 0.16s; }
+@keyframes stiller-result-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.kazik-result-bubble,
+.wheel-result-bubble {
+  text-align: center;
+  animation: stiller-result-pop 0.35s ease-out;
+}
+.kazik-win-label {
+  margin-top: 4px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.wheel-result-label {
+  font-size: 20px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+.stiller-triggered-by {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Логотип-загрузчик с прыгающими буквами (components/LoadingLogo.jsx) */
+/* — заменяет собой простой текст "Загрузка..." на экранах ожидания.   */
+/* ------------------------------------------------------------------ */
+.loading-logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.loading-logo-letters {
+  display: flex;
+}
+.loading-logo-letters span {
+  display: inline-block;
+  font-weight: 800;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  animation: loading-logo-bounce 1.2s ease-in-out infinite;
+}
+.loading-logo-large .loading-logo-letters span { font-size: 32px; }
+.loading-logo-small .loading-logo-letters span { font-size: 15px; }
+.loading-logo-label {
+  color: var(--muted);
+  font-size: 14px;
+}
+.loading-logo-small .loading-logo-label { font-size: 12px; }
+
+/* Буквы перекатываются волной, как звук перезвона: тёплая латунь
+   переходит в медь и обратно. Цвета — переменные, иначе в светлой теме
+   светлые буквы растворялись бы в фоне. */
+.loading-logo-letters span:nth-child(9n+1) { color: var(--logo-1); animation-delay: 0s; }
+.loading-logo-letters span:nth-child(9n+2) { color: var(--logo-2); animation-delay: 0.08s; }
+.loading-logo-letters span:nth-child(9n+3) { color: var(--logo-3); animation-delay: 0.16s; }
+.loading-logo-letters span:nth-child(9n+4) { color: var(--logo-4); animation-delay: 0.24s; }
+.loading-logo-letters span:nth-child(9n+5) { color: var(--logo-3); animation-delay: 0.32s; }
+.loading-logo-letters span:nth-child(9n+6) { color: var(--logo-2); animation-delay: 0.4s; }
+.loading-logo-letters span:nth-child(9n+7) { color: var(--logo-1); animation-delay: 0.48s; }
+.loading-logo-letters span:nth-child(9n+8) { color: var(--logo-2); animation-delay: 0.56s; }
+.loading-logo-letters span:nth-child(9n+9) { color: var(--logo-3); animation-delay: 0.64s; }
+
+@keyframes loading-logo-bounce {
+  0%, 60%, 100% { transform: translateY(0) rotate(0deg); }
+  30% { transform: translateY(-10px) rotate(-6deg); }
+}
+
+/* --- Групповые звонки (см. components/GroupCallOverlay.jsx) -------------- */
+
+/* Карточка группового звонка шире обычной: внутри сетка участников, а их
+   может быть до двадцати (см. utils/groupCalls.js). */
+.group-call-modal { max-width: 720px; width: 100%; }
+
+.group-call-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 16px 0 4px;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.group-call-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 120px;
+  padding: 10px 6px;
+  border-radius: 12px;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.group-call-tile-me { border-color: var(--accent); }
+.group-call-tile-ringing { opacity: 0.6; }
+
+.group-call-tile-name {
+  font-size: 13px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-call-tile-status { font-size: 11px; }
+
+.group-call-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Имя поверх видео должно оставаться читаемым */
+.group-call-tile .group-call-video ~ .group-call-tile-name {
+  position: relative;
+  z-index: 1;
+  margin-top: auto;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* Плашка "идёт групповой звонок" в шапке чата */
+.group-call-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--accent-border);
+  font-size: 14px;
+}
+
+.group-call-banner button { padding: 6px 14px; font-size: 13px; }
+
+/* Диалог выбора, кому звонить */
+.call-picker { max-width: 460px; width: 100%; }
+.call-picker-all { margin-bottom: 8px; }
+.call-picker-list { max-height: 45vh; overflow-y: auto; margin-bottom: 8px; }
+
+.call-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+
+/* Общее правило input'ов в проекте — width: 100%, и в этой строке оно
+   растягивало чекбокс на всю ширину: аватарка уезжала к правому краю, а имя
+   сжималось до нуля и было не видно вовсе. */
+.call-picker-row input[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.call-picker-row-busy { opacity: 0.55; cursor: default; }
+.call-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-picker-busy { font-size: 12px; }
+
+@media (max-width: 600px) {
+  .group-call-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+  .group-call-tile { min-height: 104px; }
+}
+
+/* Плашка "нет связи с сервером" над перепиской (см. pages/ChatWindow.jsx).
+   Firestore при обрыве связи молча копит отправленные сообщения в очереди —
+   без этой плашки человек уверен, что всё ушло собеседнику. */
+.offline-banner {
+  padding: 8px 12px;
+  background: rgba(220, 150, 60, 0.18);
+  border-bottom: 1px solid rgba(220, 150, 60, 0.4);
+  font-size: 13px;
+  text-align: center;
+}

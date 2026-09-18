@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="MyPeal">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#26242c"/>
+      <stop offset="1" stop-color="#16161a"/>
+    </linearGradient>
+    <linearGradient id="brass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffd27a"/>
+      <stop offset="45%" stop-color="#ffb02e"/>
+      <stop offset="100%" stop-color="#e08a00"/>
+    </linearGradient>
+    <linearGradient id="brassDark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e59b1c"/>
+      <stop offset="100%" stop-color="#c97a00"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#ffd27a" stop-opacity=".4"/>
+      <stop offset="100%" stop-color="#ffb02e" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="frame">
+      <rect width="512" height="512" rx="112"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="512" height="512" fill="url(#sky)"/>
+    <circle cx="256" cy="250" r="210" fill="url(#glow)"/>
+
+    <!-- Волны звона -->
+    <g fill="none" stroke="#ffb02e" stroke-linecap="round" opacity=".75">
+      <path d="M126 176 C 96 214 96 288 126 326" stroke-width="15"/>
+      <path d="M386 176 C 416 214 416 288 386 326" stroke-width="15"/>
+    </g>
+    <g fill="none" stroke="#ffb02e" stroke-linecap="round" opacity=".35">
+      <path d="M74 142 C 30 200 30 302 74 360" stroke-width="14"/>
+      <path d="M438 142 C 482 200 482 302 438 360" stroke-width="14"/>
+    </g>
+
+    <!-- Подвес -->
+    <path d="M256 74 a20 20 0 0 1 20 20 v16 h-40 V94 a20 20 0 0 1 20-20 z" fill="#ded9d0"/>
+
+    <!-- Колокол -->
+    <path d="M256 112 c 62 0 104 44 110 104 c 5 50 16 78 30 96 H 116 c 14-18 25-46 30-96 c 6-60 48-104 110-104 z" fill="url(#brass)"/>
+    <path d="M214 156 c-22 22-30 52-33 92 c-3 40-10 52-17 64 h30 c8-20 12-46 15-84 c3-38 8-56 18-72 z" fill="#fff0cf" opacity=".45"/>
+    <rect x="104" y="312" width="304" height="34" rx="17" fill="url(#brassDark)"/>
+    <ellipse cx="256" cy="372" rx="26" ry="30" fill="#ded9d0"/>
+  </g>
+</svg>
