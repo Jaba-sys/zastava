@@ -1,16 +1,48 @@
-// config.js — единственный файл, который тебе нужно править руками.
+// config.js — единственный файл, который правится руками.
 //
-// Firebase Console → шестерёнка → Project settings → раздел "Your apps"
-// → значок </> (Web) → скопируй объект firebaseConfig и вставь ниже.
+// Ключи здесь от проекта МЕССЕНДЖЕРА (mymessage-73c49), и это не ошибка.
+// Игра живёт на своём сайте и в своём репозитории, но база и вход у неё
+// общие с MyPeal — иначе вход "через мессенджер" невозможно сделать честным:
+// правила отдельного проекта не видят базу другого и не могут проверить, что
+// человек действительно тот, за кого себя выдаёт. Подробнее — в README.
 //
-// Эти ключи не секретные: они и так уезжают в браузер каждого игрока.
-// Данные защищает не ключ, а правила безопасности Firestore (см. README).
+// Ключи не секретные: они и так уезжают в браузер каждого игрока. Данные
+// защищает не ключ, а правила безопасности (firestore.rules.add.txt и
+// database.rules.json рядом).
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyDd1TKQpL105dseu8jkuHYyEVZIgYOrmbs",
-  authDomain: "zastava-game.firebaseapp.com",
-  projectId: "zastava-game",
-  storageBucket: "zastava-game.firebasestorage.app",
-  messagingSenderId: "516507068886",
-  appId: "1:516507068886:web:b99c64b472c08467891c77"
+  apiKey: "AIzaSyDh8JVR92Wl27ET3Mas_Lqj0NRcvwG3i9o",
+  authDomain: "mymessage-73c49.firebaseapp.com",
+  projectId: "mymessage-73c49",
+  storageBucket: "mymessage-73c49.firebasestorage.app",
+  messagingSenderId: "711151553980",
+  appId: "1:711151553980:web:ca4f5faa9d6fd7fd6cefb9",
+
+  // Realtime Database — по ней ходят позиции игроков, выстрелы и попадания.
+  // Firestore для этого не годится в принципе: на бесплатном плане 20 000
+  // записей в СУТКИ, а один игрок при 15 обновлениях в секунду съедает
+  // столько за 22 минуты. У Realtime Database лимит по трафику, а не по
+  // числу записей, и такой поток для неё обычное дело.
+  //
+  // Базы пока нет — её надо создать один раз руками:
+  // Firebase Console -> Build -> Realtime Database -> Create Database ->
+  // регион europe-west1 -> "Start in locked mode". После создания консоль
+  // покажет адрес вида
+  //   https://mymessage-73c49-default-rtdb.europe-west1.firebasedatabase.app
+  // Впиши его сюда. Пока строка пустая, игра честно скажет об этом на входе,
+  // а не упадёт с невнятной ошибкой.
+  databaseURL: ""
 };
+
+// Адрес мессенджера, куда игра отправляет человека за пропуском.
+// Оба сайта — один и тот же MyPeal, просто два его домена.
+export const MYPEAL_ORIGIN = "https://mypeal.web.app";
+
+// Как игра называет себя в пропуске. Мессенджер показывает это имя на экране
+// "разрешить доступ" и записывает в сам пропуск.
+export const APP_ID = "zastava";
+
+// Сколько игроков пускаем в один матч. Мешевая синхронизация через одну
+// комнату Realtime Database спокойно держит и больше, но на четверых карты
+// сделаны по размеру.
+export const MAX_PLAYERS = 4;

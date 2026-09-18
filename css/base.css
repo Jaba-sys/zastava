@@ -102,3 +102,29 @@ body::before{
 @media (prefers-reduced-motion:reduce){
   *{animation:none !important; transition:none !important}
 }
+
+/* ---------- миниатюры карт ----------
+   Нарисованы градиентами, а не картинками: два лишних запроса к серверу ради
+   двух квадратиков не нужны, а выглядят они одинаково на любом экране. */
+.map-art{
+  display:block; width:100%; aspect-ratio:130/86;
+  border-radius:2px; position:relative; overflow:hidden;
+}
+
+/* Карьер: пыльный полдень, уступы кольцом, тень от моста поперёк. */
+.map-art.karier{
+  background:
+    linear-gradient(90deg, transparent 46%, rgba(90,60,30,.5) 46%, rgba(90,60,30,.5) 54%, transparent 54%),
+    radial-gradient(closest-side at 50% 52%, #5d6357 0 20%, #a99a7c 21% 42%, #bdae90 43% 66%, #cabb9c 67% 100%),
+    #c9b896;
+}
+
+/* Депо: ночь, пятна фонарей, светлая полоса поворотного круга. */
+.map-art.depo{
+  background:
+    radial-gradient(closest-side at 50% 50%, rgba(255,180,92,.5) 0 14%, transparent 15%),
+    radial-gradient(closest-side at 18% 26%, rgba(255,180,92,.32) 0 9%, transparent 10%),
+    radial-gradient(closest-side at 82% 74%, rgba(255,180,92,.32) 0 9%, transparent 10%),
+    repeating-linear-gradient(90deg, #3a3330 0 9px, #23211f 9px 22px),
+    #16191b;
+}

@@ -1,127 +1,55 @@
-// auth-screen.js — вся логика страницы входа: вкладки, форма, лобби.
+// auth-screen.js — экран входа. Своей регистрации у игры нет вовсе: аккаунт
+// один и тот же, что в мессенджере. Это не упрощение, а суть задумки — в бою
+// тебя видят под тем же именем, под которым ты пишешь друзьям.
 
-import { auth, isConfigured } from "./firebase.js";
-import { ensureProfile }      from "./profile.js";
-import { explain }            from "./errors.js";
-
-import {
-  createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  updateProfile, onAuthStateChanged, signOut, sendPasswordResetEmail
-} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import { isConfigured } from "./firebase.js";
+import { resolvePlayer, goToMyPeal } from "./mypeal-auth.js";
+import { ensurePlayer } from "./profile.js";
+import { MYPEAL_ORIGIN } from "./config.js";
 
 const $ = id => document.getElementById(id);
-const note = $("note");
 
-const say = (text, kind = "err") => {
+function say(text, kind = "err"){
+  const note = $("note");
   note.textContent = text;
   note.className = "note show " + kind;
-};
-const clearNote = () => { note.className = "note"; };
+}
 
-/* ---------- конфиг не заполнен: показываем подсказку и дальше не идём ---------- */
 if (!isConfigured){
   $("setup").classList.add("show");
-  $("submitBtn").disabled = true;
+  $("enterBtn").disabled = true;
   say("Ключи Firebase не вписаны — смотри подсказку ниже.");
-  throw new Error("firebaseConfig пустой");
+} else {
+  boot();
 }
 
-/* ---------- вкладки: вход / регистрация ---------- */
-let mode = "in";
-
-function setMode(next){
-  mode = next;
-  const up = mode === "up";
-
-  $("tabIn").setAttribute("aria-selected", String(!up));
-  $("tabUp").setAttribute("aria-selected", String(up));
-
-  $("nickField").hidden   = !up;
-  $("nick").required      = up;
-  $("submitBtn").textContent = up ? "Создать аккаунт" : "Войти";
-  $("pass").autocomplete  = up ? "new-password" : "current-password";
-  $("resetBtn").hidden    = up;
-
-  clearNote();
-}
-
-$("tabIn").onclick = () => setMode("in");
-$("tabUp").onclick = () => setMode("up");
-
-/* ---------- отправка формы ---------- */
-$("form").addEventListener("submit", async event => {
-  event.preventDefault();
-
-  const email = $("email").value.trim();
-  const pass  = $("pass").value;
-  const nick  = $("nick").value.trim();
-
-  if (mode === "up" && nick.length < 2){
-    return say("Позывной — минимум 2 символа.");
-  }
-
-  $("submitBtn").disabled = true;
-  clearNote();
+async function boot(){
+  $("enterBtn").onclick = () => {
+    $("enterBtn").disabled = true;
+    $("enterBtn").textContent = "Открываю MyPeal…";
+    goToMyPeal();
+  };
+  $("aboutBtn").onclick = () => open(MYPEAL_ORIGIN, "_blank", "noopener");
 
   try {
-    if (mode === "up"){
-      const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      await updateProfile(cred.user, { displayName: nick });
-      await ensureProfile(cred.user, nick);
-    } else {
-      await signInWithEmailAndPassword(auth, email, pass);
+    const resolved = await resolvePlayer();
+
+    if (!resolved.uid){
+      // Обычный первый заход: показываем кнопку и ничего больше не делаем.
+      $("gate").classList.add("ready");
+      return;
     }
+
+    // Либо вернулись с пропуском, либо эта вкладка уже входила раньше.
+    const profile = await ensurePlayer(resolved.uid, resolved.fresh || {});
+    $("gate").classList.add("ready");
+    say(`Вход выполнен: ${profile.name}. Переходим в лобби…`, "ok");
+    setTimeout(() => { location.href = "lobby.html"; }, 700);
+
   } catch (error){
-    say(explain(error));
-  } finally {
-    $("submitBtn").disabled = false;
+    $("gate").classList.add("ready");
+    $("enterBtn").disabled = false;
+    $("enterBtn").textContent = "Войти через MyPeal";
+    say(error.message);
   }
-});
-
-/* ---------- сброс пароля ---------- */
-$("resetBtn").onclick = async () => {
-  const email = $("email").value.trim();
-  if (!email) return say("Впиши почту в поле выше, туда придёт ссылка.");
-
-  try {
-    await sendPasswordResetEmail(auth, email);
-    say("Ссылка для нового пароля ушла на " + email, "ok");
-  } catch (error){
-    say(explain(error));
-  }
-};
-
-/* ---------- выход ---------- */
-$("outBtn").onclick = () => signOut(auth);
-
-/* ---------- реакция на вход и выход ---------- */
-onAuthStateChanged(auth, async user => {
-  const tabs  = $("tabs");
-  const form  = $("form");
-  const lobby = $("lobby");
-
-  if (!user){
-    tabs.classList.remove("hide");
-    form.classList.remove("hide");
-    lobby.classList.remove("show");
-    return;
-  }
-
-  try {
-    const p = await ensureProfile(user);
-
-    $("hello").textContent   = p.nickname;
-    $("mail").textContent    = user.email || "";
-    $("sPoints").textContent = p.points;
-    $("sKills").textContent  = p.kills;
-    $("sCases").textContent  = p.cases;
-
-    tabs.classList.add("hide");
-    form.classList.add("hide");
-    lobby.classList.add("show");
-  } catch (error){
-    say(explain(error));
-  }
-});
-
-setMode("in");
+}

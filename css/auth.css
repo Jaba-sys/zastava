@@ -47,7 +47,7 @@
   border-radius:var(--r);
   padding:10px 10px 9px;
 }
-.map svg{display:block; width:100%; height:auto}
+
 .map b{
   display:block; margin-top:9px;
   font-family:var(--display); font-weight:500;
@@ -65,40 +65,24 @@
 .gate{
   padding:56px 44px;
   display:flex; flex-direction:column; justify-content:center;
+  /* До ответа от Firebase колонка скрыта: моргнуть кнопкой "Войти" и тут же
+     увести человека в лобби — хуже, чем полсекунды подождать. */
+  opacity:0; transition:opacity .25s;
 }
+.gate.ready{opacity:1}
 @media (max-width:860px){ .gate{padding:30px 22px 46px} }
 
-.tabs{display:flex; gap:26px; margin-bottom:26px}
-.tab{
-  background:none; border:0; padding:0 0 8px; cursor:pointer;
-  font-family:var(--display); font-size:19px; font-weight:500;
-  letter-spacing:.04em; color:rgba(236,231,219,.42);
-  border-bottom:2px solid transparent;
-}
-.tab[aria-selected="true"]{color:var(--paper); border-bottom-color:var(--signal)}
-.tab:focus-visible{outline:2px solid var(--signal); outline-offset:3px}
-
-/* ---------- лобби после входа ---------- */
-.lobby{display:none}
-.lobby.show{display:block}
-.hide{display:none !important}
-
-.hello{
+.gate-title{
   font-family:var(--display); font-size:30px; font-weight:500;
-  letter-spacing:.03em; margin:0 0 4px;
+  letter-spacing:.04em; margin:0 0 10px;
 }
-.mail{font-size:13px; color:rgba(236,231,219,.45); margin:0 0 24px}
+.gate-sub{font-size:14px; color:rgba(236,231,219,.6); margin:0 0 26px; max-width:38ch}
 
-.stats{
-  display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
-  background:var(--line);
-  border:1px solid var(--line);
-  border-radius:var(--r);
-  overflow:hidden; margin-bottom:22px;
+.fineprint{
+  margin-top:22px; padding-top:16px;
+  border-top:1px solid var(--line);
+  font-size:12.5px; color:rgba(236,231,219,.42);
 }
-.stat{background:var(--concrete-2); padding:14px 12px}
-.stat b{display:block; font-family:var(--display); font-size:26px; font-weight:500; color:var(--sand)}
-.stat span{font-size:12px; color:var(--muted)}
 
 /* ---------- подсказка про незаполненный конфиг ---------- */
 .setup{

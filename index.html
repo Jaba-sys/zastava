@@ -18,96 +18,44 @@
 
   <section class="brand">
     <h1 class="mark">Застава
-      <span>Браузерный шутер на четверых. Заходишь по ссылке, стреляешь, забираешь очки.</span>
+      <span>Браузерный шутер на четверых. Заходишь своим аккаунтом MyPeal, стреляешь, забираешь очки.</span>
     </h1>
 
     <div class="maps">
       <div class="map">
-        <svg viewBox="0 0 130 86" aria-hidden="true">
-          <rect width="130" height="86" fill="#22282a"/>
-          <g fill="#7a6242" stroke="#5c492f">
-            <rect x="18" y="16" width="20" height="20"/><rect x="30" y="30" width="16" height="16"/>
-            <rect x="86" y="48" width="20" height="20"/><rect x="72" y="34" width="16" height="16"/>
-            <rect x="56" y="12" width="14" height="14"/><rect x="22" y="58" width="18" height="16"/>
-            <rect x="98" y="14" width="14" height="14"/>
-          </g>
-          <g fill="#3d4a52"><rect x="0" y="40" width="12" height="30"/><rect x="118" y="18" width="12" height="30"/></g>
-          <circle cx="10" cy="78" r="3.2" fill="#e8a317"/><circle cx="120" cy="8" r="3.2" fill="#c9b896"/>
-        </svg>
-        <b>Склад</b><i>ящики, узкие проходы</i>
+        <span class="map-art karier"></span>
+        <b>Карьер</b><i>три уступа, конвейерный мост, длинные линии</i>
       </div>
-
       <div class="map">
-        <svg viewBox="0 0 130 86" aria-hidden="true">
-          <rect width="130" height="86" fill="#262523"/>
-          <g fill="#6e6a5e" stroke="#514e45">
-            <path d="M12 20h34v14H30v12H12z"/><path d="M84 52h34v14h-16v10H84z"/>
-            <rect x="54" y="34" width="24" height="18" rx="2"/>
-            <path d="M96 12h22v18H96z"/><path d="M14 60h20v16H14z"/>
-          </g>
-          <rect x="0" y="41" width="130" height="4" fill="#3d4a52" opacity=".55"/>
-          <circle cx="8" cy="10" r="3.2" fill="#e8a317"/><circle cx="122" cy="76" r="3.2" fill="#c9b896"/>
-        </svg>
-        <b>Камень</b><i>длинные простреливаемые линии</i>
+        <span class="map-art depo"></span>
+        <b>Депо</b><i>ночь, вагоны, поворотный круг в центре</i>
       </div>
     </div>
 
-    <p class="roster">До 4 игроков в матче. Аккаунт хранит очки, статистику и кейсы.</p>
+    <p class="roster">До 4 игроков в матче. Очки, убийства и статистика привязаны к аккаунту мессенджера.</p>
   </section>
 
-  <section class="gate">
-    <div class="tabs" id="tabs" role="tablist">
-      <button class="tab" id="tabIn" role="tab" aria-selected="true">Вход</button>
-      <button class="tab" id="tabUp" role="tab" aria-selected="false">Регистрация</button>
-    </div>
+  <section class="gate" id="gate">
+    <h2 class="gate-title">Вход</h2>
+    <p class="gate-sub">
+      Отдельного пароля у игры нет. Нажми кнопку — откроется MyPeal, там ты
+      войдёшь или зарегистрируешься как обычно, и вернёшься сюда уже бойцом.
+    </p>
 
-    <form id="form" autocomplete="on">
-      <div class="field" id="nickField" hidden>
-        <label for="nick">Позывной</label>
-        <input id="nick" name="nickname" maxlength="16" placeholder="Как тебя увидят в матче" autocomplete="nickname">
-      </div>
+    <button class="btn btn-main" id="enterBtn" type="button">Войти через MyPeal</button>
+    <button class="link" id="aboutBtn" type="button">Открыть мессенджер</button>
 
-      <div class="field">
-        <label for="email">Почта</label>
-        <input id="email" name="email" type="email" required placeholder="you@mail.ru" autocomplete="email">
-      </div>
+    <div class="note" id="note"></div>
 
-      <div class="field">
-        <label for="pass">Пароль</label>
-        <input id="pass" name="password" type="password" required minlength="6" placeholder="минимум 6 символов" autocomplete="current-password">
-      </div>
-
-      <button class="btn btn-main" id="submitBtn" type="submit">Войти</button>
-      <button class="link" id="resetBtn" type="button">Забыл пароль</button>
-
-      <div class="note" id="note"></div>
-    </form>
-
-    <div class="lobby" id="lobby">
-      <h2 class="hello" id="hello">—</h2>
-      <p class="mail" id="mail"></p>
-
-      <div class="stats">
-        <div class="stat"><b id="sPoints">0</b><span>очки</span></div>
-        <div class="stat"><b id="sKills">0</b><span>убийства</span></div>
-        <div class="stat"><b id="sCases">0</b><span>кейсы</span></div>
-      </div>
-
-      <button class="btn btn-main" id="playBtn" type="button" disabled>Найти матч</button>
-      <button class="link" id="outBtn" type="button">Выйти из аккаунта</button>
-
-      <div class="note ok show" style="margin-top:18px">
-        Аккаунт работает. Дальше сюда подключим комнату на 4 игроков и саму карту.
-      </div>
-    </div>
+    <p class="fineprint">
+      Игра получит только имя и тег из твоего профиля. Переписку она не видит.
+    </p>
   </section>
 
   <div class="setup" id="setup">
     <b>Осталось вписать ключи Firebase.</b><br>
-    Консоль Firebase → Project settings → «Your apps» → Web app. Скопируй объект <code>firebaseConfig</code>
-    и вставь его в файл <code>js/config.js</code>.<br><br>
-    Там же: Authentication → Sign-in method → включи «Email/Password».
-    Затем Firestore Database → Create database.
+    Открой <code>js/config.js</code> и вставь туда объект <code>firebaseConfig</code>
+    проекта мессенджера, а также адрес Realtime Database.
   </div>
 
 </div>

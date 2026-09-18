@@ -1,0 +1,133 @@
+/* lobby.css — экран между входом и боем. */
+
+.lobby-shell{
+  position:relative; z-index:1;
+  max-width:1060px; margin:0 auto;
+  padding:28px 24px 40px;
+  display:flex; flex-direction:column; gap:22px;
+  min-height:100%;
+}
+
+/* ---------- шапка ---------- */
+.top{
+  display:flex; align-items:center; gap:24px; flex-wrap:wrap;
+  padding-bottom:20px; border-bottom:1px solid var(--line);
+}
+.me h1{
+  font-family:var(--display); font-size:30px; font-weight:500;
+  letter-spacing:.03em; margin:0; color:var(--sand);
+}
+.me span{font-size:13px; color:rgba(236,231,219,.45)}
+
+.stats{display:flex; gap:1px; margin-left:auto; background:var(--line); border:1px solid var(--line); border-radius:var(--r); overflow:hidden}
+.stat{background:var(--concrete-2); padding:10px 16px; text-align:center; min-width:72px}
+.stat b{display:block; font-family:var(--display); font-size:22px; font-weight:500; color:var(--sand)}
+.stat span{font-size:11px; color:var(--muted)}
+
+.top-actions{display:flex; gap:16px}
+.top-actions .link{margin-top:0}
+
+/* ---------- две колонки ---------- */
+.columns{display:grid; grid-template-columns:1.15fr .85fr; gap:20px; align-items:start}
+@media (max-width:820px){ .columns{grid-template-columns:1fr} }
+
+.panel{
+  background:var(--concrete-2);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  padding:20px 20px 22px;
+}
+.panel h2{
+  font-family:var(--display); font-size:15px; font-weight:500;
+  letter-spacing:.09em; text-transform:uppercase;
+  color:rgba(236,231,219,.5);
+  margin:0 0 12px;
+}
+.panel h2 + *{margin-top:0}
+.panel > h2:not(:first-child){margin-top:24px}
+
+/* ---------- карты ---------- */
+.maps-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+.map-card{
+  text-align:left; cursor:pointer;
+  background:var(--concrete); color:inherit;
+  border:1px solid var(--line); border-radius:var(--r);
+  padding:9px 9px 11px; margin:0; width:100%;
+  font-family:inherit;
+  transition:border-color .15s, transform .12s;
+}
+.map-card:hover{border-color:rgba(201,184,150,.45); transform:translateY(-1px)}
+.map-card.on{border-color:var(--signal); box-shadow:0 0 0 1px var(--signal) inset}
+.map-card b{
+  display:block; margin-top:9px;
+  font-family:var(--display); font-weight:500; letter-spacing:.05em;
+  font-size:15px; color:var(--paper);
+}
+.map-card i{display:block; font-style:normal; font-size:12px; color:rgba(236,231,219,.48); line-height:1.35}
+
+/* ---------- режимы ---------- */
+.modes{display:flex; flex-direction:column; gap:9px}
+.mode{
+  text-align:left; cursor:pointer; width:100%; margin:0;
+  background:var(--concrete); color:inherit;
+  border:1px solid var(--line); border-radius:var(--r);
+  padding:11px 14px; font-family:inherit;
+  transition:border-color .15s;
+}
+.mode:hover{border-color:rgba(201,184,150,.45)}
+.mode.on{border-color:var(--signal); box-shadow:0 0 0 1px var(--signal) inset}
+.mode b{display:block; font-family:var(--display); font-weight:500; letter-spacing:.04em; font-size:15px}
+.mode i{font-style:normal; font-size:12px; color:rgba(236,231,219,.48)}
+
+/* ---------- вход по коду ---------- */
+.join-row{display:flex; gap:8px}
+.join-row input{
+  flex:1; padding:12px 13px;
+  background:var(--concrete); border:1px solid rgba(201,184,150,.2);
+  border-radius:var(--r); color:var(--paper);
+  font-family:var(--display); font-size:19px; letter-spacing:.24em;
+  text-transform:uppercase;
+}
+.join-row input:focus{outline:none; border-color:var(--signal)}
+.join-row .btn{width:auto; margin:0; padding:12px 20px}
+
+/* ---------- список комнат ---------- */
+.rooms{display:flex; flex-direction:column; gap:8px}
+.room{
+  display:flex; align-items:center; gap:12px;
+  background:var(--concrete); border:1px solid var(--line);
+  border-radius:var(--r); padding:11px 13px;
+}
+.room > div{min-width:0; flex:1}
+.room b{display:block; font-size:14px}
+.room i{font-style:normal; font-size:12px; color:rgba(236,231,219,.45)}
+.room .code{
+  font-family:var(--display); letter-spacing:.2em; font-size:15px;
+  color:var(--signal); flex-shrink:0;
+}
+.room .btn{width:auto; margin:0; padding:8px 14px; font-size:14px; flex-shrink:0}
+.empty{font-size:13px; color:var(--muted); margin:0}
+
+/* ---------- подсказка про Realtime Database ---------- */
+.rtdb-note{
+  display:none; padding:16px 18px;
+  background:rgba(232,163,23,.08);
+  border:1px solid rgba(232,163,23,.35);
+  border-radius:var(--r);
+  font-size:13.5px; color:#f0d199; line-height:1.55;
+}
+.rtdb-note.show{display:block}
+.rtdb-note b{display:block; margin-bottom:4px}
+.rtdb-note code{font-family:ui-monospace,monospace; background:rgba(0,0,0,.3); padding:1px 5px; border-radius:2px}
+
+/* ---------- напоминание об управлении ---------- */
+.hints{
+  display:flex; flex-wrap:wrap; gap:6px 18px;
+  padding-top:18px; border-top:1px solid var(--line);
+  font-size:12px; color:rgba(236,231,219,.4);
+  margin-top:auto;
+}
+.hints b{
+  font-family:var(--display); letter-spacing:.08em;
+  color:rgba(236,231,219,.72); margin-right:5px;
+}
