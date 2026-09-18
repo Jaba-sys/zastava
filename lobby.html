@@ -37,11 +37,13 @@
   <div class="note" id="note"></div>
 
   <div class="rtdb-note" id="rtdbNote">
-    <b>Realtime Database ещё не создана.</b>
-    Консоль Firebase → Build → Realtime Database → Create Database → регион
-    <code>europe-west1</code> → Start in locked mode. Потом впиши её адрес в
-    <code>js/config.js</code>, а правила возьми из <code>database.rules.json</code>.
-    Без неё матч не запустится: по ней ходят позиции игроков.
+    <b>Не задан адрес Realtime Database.</b>
+    В <code>js/config.js</code> пустое поле <code>databaseURL</code>. Если база уже
+    создана — её адрес показан в консоли Firebase на вкладке
+    Realtime Database → Data, над деревом данных. Если базы ещё нет:
+    Build → Realtime Database → Create Database → регион <code>europe-west1</code>
+    → Start in locked mode, а правила взять из <code>database.rules.json</code>.
+    Без адреса матч не запустится: по этой базе ходят позиции игроков.
   </div>
 
   <main class="columns">

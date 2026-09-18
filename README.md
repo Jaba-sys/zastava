@@ -123,11 +123,12 @@ Functions это решили бы, но требуют платного пла�
 1. **Анонимный вход.** Authentication → Sign-in method → Anonymous → Enable.
    Без него игра не сможет даже прочитать пропуск. По умолчанию выключен.
 
-2. **Realtime Database.** Build → Realtime Database → Create Database → регион
-   `europe-west1` → Start in locked mode. Скопировать её адрес (вида
-   `https://mymessage-73c49-default-rtdb.europe-west1.firebasedatabase.app`) в
-   `js/config.js`, поле `databaseURL`. Затем вкладка Rules → вставить целиком
-   содержимое `database.rules.json` → Publish.
+2. **Realtime Database.** Уже создана (регион Belgium, europe-west1), её адрес
+   вписан в `js/config.js` — трогать не нужно. Правила: Realtime Database →
+   вкладка Rules → вставить целиком `database.rules.json` → Publish.
+
+   Если базу придётся пересоздавать, новый адрес виден в консоли на вкладке
+   Realtime Database → Data, над деревом данных; он же идёт в `databaseURL`.
 
 3. **Правила Firestore.** В `firestore.rules` мессенджера добавлены разделы
    `authTickets`, `authLinks`, `gamePlayers` и помощники `authTicketOk` /
