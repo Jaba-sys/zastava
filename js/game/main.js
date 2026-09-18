@@ -18,9 +18,15 @@ import { ensurePlayer, addMatchResult } from "../profile.js";
 import { buildMap, mapMeta } from "./maps/index.js";
 import { PLAYER, movePlayer, onGround, raycast } from "./physics.js";
 import { Controls } from "./controls.js";
-import { Arsenal, damageAt, scatter } from "./weapons.js";
+import { Arsenal, damageAt, scatter, COINS_PER_KILL, COINS_PER_MATCH } from "./weapons.js";
 import { RemotePlayer } from "./remote.js";
 import { Hud } from "./hud.js";
+import { TouchControls, isTouchDevice } from "./touch.js";
+import {
+  wakeSound, setVolume, getVolume, playShot, playRemoteShot, playHit, playHurt,
+  playReloadOut, playReloadIn, playSwitch, playDeath, playSpawn, playKill,
+  playMatchEnd, playStep, playChat
+} from "./sound.js";
 import * as net from "../net/live.js";
 
 const MATCH_SECONDS = 8 * 60;
@@ -45,6 +51,13 @@ let stopWatchers = [];
 let leaveRoom = null;
 let matchOver = false;
 let localStats = { kills: 0, deaths: 0 };
+let touch = null;
+let stepAt = 0;
+let leaving = false;
+let saved = false;
+let aimNow = 1;          // текущее приближение, плавно едет к целевому
+let scopeShown = false;
+const BASE_FOV = 78;
 
 const self = {
   pos: new THREE.Vector3(),
@@ -85,7 +98,9 @@ async function start(){
   buildScene();
   // Управление создаём до первого возрождения: spawn() ставит controls.yaw.
   controls = new Controls(canvas);
-  arsenal = new Arsenal();
+  // В бой идём с тем набором, который собран в оружейной. Если он пуст или
+  // в нём оружие, которого уже нет, Arsenal сам подставит автомат.
+  arsenal = new Arsenal(profile.loadout);
 
   // Команду выбираем по чётности числа уже вошедших: так две стороны
   // наполняются поровну без отдельного распорядителя.
@@ -128,7 +143,7 @@ function buildScene(){
   scene.fog = new THREE.Fog(map.fog.color, map.fog.near, map.fog.far);
   scene.add(map.group);
 
-  camera = new THREE.PerspectiveCamera(78, innerWidth / innerHeight, 0.08, 600);
+  camera = new THREE.PerspectiveCamera(BASE_FOV, innerWidth / innerHeight, 0.08, 600);
 
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -158,50 +173,84 @@ const viewModel = {
     this.camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.01, 4);
     this.group = new THREE.Group();
 
-    const metal = new THREE.MeshStandardMaterial({ color: 0x2f3336, roughness: 0.55, metalness: 0.65 });
-    const wood  = new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.85 });
+    const metal = new THREE.MeshStandardMaterial({ color: 0x5b6469, roughness: 0.45, metalness: 0.55 });
+    const wood  = new THREE.MeshStandardMaterial({ color: 0x6d4f31, roughness: 0.85 });
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.46), metal);
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.3), metal);
-    barrel.position.z = -0.35;
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.2), wood);
-    stock.position.z = 0.3;
-    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.08), metal);
-    mag.position.set(0, -0.11, -0.02);
+    // РАССТОЯНИЯ ЗДЕСЬ — САМОЕ ВАЖНОЕ. Камера смотрит вдоль -Z, и всё, что
+    // ближе примерно четверти метра, раздувается на пол-экрана; а то, что
+    // заехало за нулевую отметку, камера показывает изнутри — чёрным пятном.
+    // В первой версии приклад торчал назад до z = -0.02, то есть стоял
+    // вплотную к объективу, и правый нижний угол экрана заливало чёрным.
+    // Теперь ближняя точка модели — затылок приклада — в 41 см от камеры,
+    // дальняя — срез ствола — в 128 см.
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.095, 0.4), metal);
+    body.position.z = -0.05;
+    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.32), metal);
+    barrel.position.z = -0.4;
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.035, 0.03), metal);
+    sight.position.set(0, 0.065, -0.22);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.16), wood);
+    stock.position.z = 0.23;
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.13, 0.07), wood);
+    grip.position.set(0, -0.09, 0.1);
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, 0.075), metal);
+    mag.position.set(0, -0.1, -0.05);
 
-    this.group.add(body, barrel, stock, mag);
-    this.group.position.set(0.17, -0.15, -0.42);
+    this.group.add(body, barrel, sight, stock, grip, mag);
+    this.base = new THREE.Vector3(0.21, -0.15, -0.72);
+    this.group.position.copy(this.base);
+    this.group.rotation.set(0.02, -0.07, 0.03);
     this.scene.add(this.group);
 
     this.flash = new THREE.PointLight(0xffd9a0, 0, 2.2);
-    this.flash.position.set(0.17, -0.12, -0.8);
+    this.flash.position.set(0.2, -0.1, -0.95);
     this.scene.add(this.flash);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+
+    // Ровный свет со всех сторон делает ствол плоским пятном. Мягкая заливка
+    // плюс один направленный источник сверху-слева — и видно грани.
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+    const key = new THREE.DirectionalLight(0xfff0dc, 1.6);
+    key.position.set(-0.6, 1, 0.4);
+    this.scene.add(key);
 
     this.recoil = 0;
     this.bob = 0;
+    this.fit = 1;
+    this._measure();
 
     addEventListener("resize", () => {
       this.camera.aspect = innerWidth / innerHeight;
       this.camera.updateProjectionMatrix();
+      this._measure();
     });
+  },
+
+  /**
+   * На телефоне в горизонтальном положении экран низкий и широкий, и ствол при
+   * той же геометрии занимает половину высоты. Ужимаем его по высоте экрана,
+   * а не по ширине — от ширины он не зависит.
+   */
+  _measure(){
+    this.fit = Math.max(0.62, Math.min(1, innerHeight / 620));
   },
 
   update(dt, speed, weapon){
     this.recoil = Math.max(0, this.recoil - dt * 6);
     this.bob += dt * speed * 1.5;
 
-    const sway = Math.sin(this.bob) * 0.006 * Math.min(1, speed / 7);
-    const lift = Math.abs(Math.cos(this.bob)) * 0.004 * Math.min(1, speed / 7);
+    const sway = Math.sin(this.bob) * 0.007 * Math.min(1, speed / 7);
+    const lift = Math.abs(Math.cos(this.bob)) * 0.005 * Math.min(1, speed / 7);
 
     this.group.position.set(
-      0.17 + sway,
-      -0.15 + lift - this.recoil * 0.02,
-      -0.42 + this.recoil * 0.06
+      this.base.x + sway,
+      this.base.y + lift - this.recoil * 0.02,
+      this.base.z + this.recoil * 0.05
     );
-    this.group.rotation.x = this.recoil * 0.25;
+    this.group.rotation.x = 0.02 + this.recoil * 0.22;
     // Дробовик короче и толще — заметно даже краем глаза.
-    this.group.scale.set(weapon === "shotgun" ? 1.25 : 1, 1, weapon === "shotgun" ? 0.8 : 1);
+    const fat = weapon === "shotgun";
+    const k = this.fit;
+    this.group.scale.set(k * (fat ? 1.3 : 1), k * (fat ? 1.15 : 1), k * (fat ? 0.82 : 1));
     this.flash.intensity = Math.max(0, this.flash.intensity - dt * 30);
   },
 
@@ -252,6 +301,7 @@ function spawn(){
   controls.pitch = 0;
   hud.health(self.hp);
   hud.hideBanner();
+  playSpawn();
   net.pushScore(roomId, me.sessionUid, { hp: 100 });
 }
 
@@ -281,10 +331,11 @@ function wireNetwork(){
 
   stopWatchers.push(net.watchEvents(roomId, event => {
     if (event.type === "shot" && event.from !== me.sessionUid){
-      drawTracer(
-        new THREE.Vector3(event.ox, event.oy, event.oz),
-        new THREE.Vector3(event.hx, event.hy, event.hz)
-      );
+      const from = new THREE.Vector3(event.ox, event.oy, event.oz);
+      drawTracer(from, new THREE.Vector3(event.hx, event.hy, event.hz));
+      // Чужой выстрел слышно тише и глуше — по этому звуку и понимаешь,
+      // далеко стреляют или уже за спиной.
+      playRemoteShot(event.weapon, from.distanceTo(camera.position));
     }
 
     if (event.type === "hit" && event.to === me.sessionUid && self.alive){
@@ -296,6 +347,7 @@ function wireNetwork(){
       const victim = event.victimName || "боец";
       hud.kill(killer, victim, event.killer === me.sessionUid || event.victim === me.sessionUid);
       if (event.killer === me.sessionUid){
+        playKill();
         localStats.kills++;
         net.pushScore(roomId, me.sessionUid, { kills: localStats.kills });
         checkGoal();
@@ -305,6 +357,7 @@ function wireNetwork(){
 
   stopWatchers.push(net.watchChat(roomId, message => {
     hud.chat(message, message.uid === me.uid);
+    if (message.uid !== me.uid) playChat();
   }));
 
   stopWatchers.push(net.watchMeta(roomId, meta => {
@@ -344,6 +397,7 @@ const round = n => Math.round(n * 100) / 100;
 // ---------------------------------------------------------------------------
 
 function wireInput(){
+  const start = document.getElementById("start");
 
   controls.onChat = () => {
     controls.blocked = true;
@@ -354,31 +408,110 @@ function wireInput(){
   hud.onSend = text => {
     net.sendChat(roomId, { uid: me.uid, name: me.name, tag: me.tag, text });
     controls.blocked = false;
-    controls.requestLock();
+    if (!touch) controls.requestLock();
   };
+
+  const reload = () => { if (arsenal.startReload()) playReloadOut(); };
+  const swap   = () => { if (arsenal.next()) playSwitch(); };
 
   document.addEventListener("keydown", e => {
     if (controls.blocked) return;
-    if (e.code === "KeyR") arsenal?.startReload();
-    if (e.code === "Digit1") arsenal?.select(0);
-    if (e.code === "Digit2") arsenal?.select(1);
+    if (e.code === "Escape"){ openPause(); return; }
+    if (e.code === "KeyR") reload();
+    if (e.code === "Digit1" && arsenal.select(0)) playSwitch();
+    if (e.code === "Digit2" && arsenal.select(1)) playSwitch();
     if (e.code === "Tab"){ e.preventDefault(); hud.showBoard(true); }
   });
   document.addEventListener("keyup", e => {
     if (e.code === "Tab") hud.showBoard(false);
   });
-  addEventListener("wheel", () => { if (!controls.blocked) arsenal?.next(); }, { passive: true });
+  addEventListener("wheel", () => { if (!controls.blocked && arsenal.next()) playSwitch(); },
+    { passive: true });
 
-  const start = document.getElementById("start");
-  start.addEventListener("click", () => {
+  // ---- телефон ------------------------------------------------------------
+  if (isTouchDevice()){
+    touch = new TouchControls(controls, { onReload: reload, onSwap: swap, onPause: openPause });
+    // Табло на телефоне открывается тапом по счёту вверху — Tab нажать нечем.
+    const bar = document.getElementById("topbar");
+    let boardOpen = false;
+    bar.addEventListener("click", () => {
+      boardOpen = !boardOpen;
+      hud.showBoard(boardOpen);
+    });
+    // Захвата мыши на телефоне нет, поэтому "в игре" объявляем сами — иначе
+    // стрельба, завязанная на controls.locked, никогда бы не включилась.
+    controls.requestLock = () => {
+      controls.locked = true;
+      controls.onLockChange?.(true);
+    };
+    controls.releaseLock = () => {
+      controls.locked = false;
+      controls.onLockChange?.(false);
+    };
+  }
+
+  // ---- пуск и пауза -------------------------------------------------------
+  start.addEventListener("click", event => {
+    // Клик по кнопкам внутри меню обрабатывают сами кнопки.
+    if (event.target.closest("#pauseBox")) return;
+    if (start.classList.contains("paused")) return;
+    wakeSound();
     controls.blocked = false;
     controls.requestLock();
   });
+
+  document.getElementById("resumeBtn").onclick = () => {
+    start.classList.remove("paused");
+    controls.requestLock();
+  };
+  document.getElementById("leaveBtn").onclick = () => leaveMatch();
+
+  const volume = document.getElementById("volume");
+  volume.value = Math.round(getVolume() * 100);
+  document.getElementById("volumeValue").textContent = volume.value;
+  volume.oninput = () => {
+    setVolume(Number(volume.value) / 100);
+    document.getElementById("volumeValue").textContent = volume.value;
+  };
+
   controls.onLockChange = locked => {
     start.classList.toggle("gone", locked);
-    if (!locked && !hud.chatOpen) start.querySelector("span").textContent =
-      "Пауза. Нажми, чтобы вернуться в бой";
+    touch?.setVisible(locked);
+    if (locked){
+      start.classList.remove("paused");
+      wakeSound();
+    }
   };
+}
+
+/** Меню паузы. Оно же — экран, с которого бой начинается. */
+function openPause(){
+  if (matchOver || leaving) return;
+  const start = document.getElementById("start");
+  controls.releaseLock();
+  controls.firing = false;
+  start.classList.add("paused");
+  start.classList.remove("gone");
+  document.getElementById("startTitle").textContent = "Пауза";
+  document.getElementById("startSub").textContent = "Матч продолжается без тебя";
+  touch?.setVisible(false);
+}
+
+/**
+ * Выход в лобби. Сначала убираем себя из комнаты и записываем итог, и только
+ * потом уходим со страницы: уйти первым — значит бросить в базе бойца, который
+ * ещё несколько секунд будет стоять на карте мишенью для остальных.
+ */
+async function leaveMatch(){
+  if (leaving) return;
+  leaving = true;
+  document.getElementById("leaveBtn").textContent = "Выходим…";
+
+  for (const stop of stopWatchers) { try { stop(); } catch { /* ignore */ } }
+  stopWatchers = [];
+  try { await leaveRoom?.(); } catch { /* ignore */ }
+  await saveResult();
+  location.href = "lobby.html";
 }
 
 // ---------------------------------------------------------------------------
@@ -392,7 +525,7 @@ function frame(){
                                                  // стены. Ограничиваем.
   if (matchOver){ renderer.render(scene, camera); return; }
 
-  arsenal.tick();
+  if (arsenal.tick()) playReloadIn();
   stepSelf(dt);
   for (const remote of remotes.values()) remote.update(dt);
   stepShooting(dt);
@@ -403,6 +536,8 @@ function frame(){
 
   const speed = Math.hypot(self.vel.x, self.vel.z);
   viewModel.update(dt, speed, arsenal.current.id);
+  stepAim(dt);
+  stepSteps(dt, speed);
 
   hud.ammo(arsenal);
   hud.timer(secondsLeft());
@@ -411,6 +546,44 @@ function frame(){
   viewModel.render(renderer);
 
   if (secondsLeft() <= 0 && !matchOver) endMatch("Время вышло");
+}
+
+/**
+ * Прицеливание по правой кнопке. Меняем угол обзора камеры, а не двигаем её:
+ * так не нужно ни второй модели оружия, ни отдельной анимации, а ощущение
+ * приближения то же самое. Чувствительность мыши делится на то же число —
+ * без этого при трёхкратном прицеле навести на человека невозможно.
+ */
+function stepAim(dt){
+  const weapon = arsenal.current;
+  const want = controls.aiming && self.alive ? weapon.zoom : 1;
+  aimNow += (want - aimNow) * Math.min(1, dt * 12);
+
+  camera.fov = BASE_FOV / aimNow;
+  camera.updateProjectionMatrix();
+  controls.zoomFactor = aimNow;
+
+  // Окуляр показываем только у винтовки и только когда приближение почти
+  // доехало: мелькающая чёрная рамка при каждом клике раздражает.
+  const scoped = weapon.id === "sniper" && aimNow > weapon.zoom * 0.75;
+  if (scoped !== scopeShown){
+    scopeShown = scoped;
+    document.body.classList.toggle("scoped", scoped);
+    // Через окуляр ствол не видно — в него и смотрят. Оставленная в кадре
+    // модель торчала бы прямо посреди прицельной картинки.
+    viewModel.group.visible = !scoped;
+  }
+}
+
+/** Шаги. Частота от скорости; в воздухе молчим. */
+function stepSteps(dt, speed){
+  if (!self.alive || speed < 1.5 || !onGround(self, map.colliders)) return;
+  const now = performance.now() / 1000;
+  const interval = 0.42 * (PLAYER.speed / Math.max(speed, 1));
+  if (now - stepAt > interval){
+    stepAt = now;
+    playStep();
+  }
 }
 
 function stepSelf(dt){
@@ -468,7 +641,9 @@ function stepShooting(dt){
   const origin = camera.position.clone();
   const base = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
   const moving = Math.hypot(self.vel.x, self.vel.z) > 1.4;
-  const spread = moving ? weapon.spreadMoving : weapon.spread;
+  // Прицеливание втрое собирает разброс — это и есть смысл правой кнопки.
+  const aimBonus = controls.aiming ? 0.34 : 1;
+  const spread = (moving ? weapon.spreadMoving : weapon.spread) * aimBonus;
 
   const targets = [...remotes.values()]
     .filter(r => r.hp > 0 && (room.mode !== "team" || r.team !== me.team));
@@ -492,14 +667,15 @@ function stepShooting(dt){
     }
   }
 
-  if (anyHit) hud.hitMark();
+  playShot(weapon.id);
+  if (anyHit){ hud.hitMark(); playHit(); }
 
   drawTracer(origin.clone().addScaledVector(base, 0.6), farthest);
   viewModel.kick(weapon.recoil * 26);
   controls.pitch = Math.min(Math.PI / 2 - 0.02, controls.pitch + weapon.recoil);
 
   net.sendEvent(roomId, {
-    type: "shot", from: me.sessionUid,
+    type: "shot", from: me.sessionUid, weapon: weapon.id,
     ox: round(origin.x), oy: round(origin.y), oz: round(origin.z),
     hx: round(farthest.x), hy: round(farthest.y), hz: round(farthest.z)
   });
@@ -514,6 +690,7 @@ function takeDamage(amount, fromSession, fromName){
   self.hp -= amount;
   hud.health(self.hp);
   hud.damageFlash();
+  playHurt();
 
   if (self.hp > 0){
     net.pushScore(roomId, me.sessionUid, { hp: Math.round(self.hp) });
@@ -534,8 +711,10 @@ function takeDamage(amount, fromSession, fromName){
     victimName: me.name
   });
 
+  playDeath();
   hud.banner("Вас убил " + (fromName || "никто"), `Возрождение через ${RESPAWN_DELAY} с`, RESPAWN_DELAY * 1000);
   controls.firing = false;
+  controls.aiming = false;
 }
 
 function checkGoal(){
@@ -559,26 +738,43 @@ function secondsLeft(){
   return MATCH_SECONDS - (Date.now() - (room.startedAt || room.createdAt || Date.now())) / 1000;
 }
 
+/**
+ * Запись итога. Вынесена отдельно, потому что поводов два: матч кончился сам
+ * или человек вышел в лобби посреди боя. Во втором случае честно засчитываем
+ * всё, что он успел: уход не должен обнулять полчаса игры.
+ */
+async function saveResult(){
+  if (saved) return;
+  saved = true;
+  try {
+    await addMatchResult(me.uid, {
+      points: localStats.kills * 10,
+      coins: localStats.kills * COINS_PER_KILL + COINS_PER_MATCH,
+      kills: localStats.kills,
+      deaths: localStats.deaths
+    });
+  } catch { /* не записалось — матч это не портит */ }
+}
+
 async function endMatch(reason){
   if (matchOver) return;
   matchOver = true;
   controls.releaseLock();
+  touch?.setVisible(false);
+  playMatchEnd();
+
   hud.banner("Матч окончен", reason, 0);
   document.getElementById("start").classList.add("gone");
   document.getElementById("finish").classList.add("show");
   document.getElementById("finishKills").textContent = localStats.kills;
   document.getElementById("finishDeaths").textContent = localStats.deaths;
+  document.getElementById("finishCoins").textContent =
+    "+" + (localStats.kills * COINS_PER_KILL + COINS_PER_MATCH);
 
-  // Итог пишем в Firestore ОДНОЙ записью в самом конце. Начислять очки по ходу
-  // боя — это и лишний расход бесплатного лимита, и задержка ровно тогда,
-  // когда она мешает больше всего.
-  try {
-    await addMatchResult(me.uid, {
-      points: localStats.kills * 10,
-      kills: localStats.kills,
-      deaths: localStats.deaths
-    });
-  } catch { /* не записалось — матч это не портит */ }
+  // Итог пишем в Firestore ОДНОЙ записью в самом конце. Начислять по ходу боя
+  // — это и лишний расход бесплатного лимита, и задержка ровно тогда, когда
+  // она мешает больше всего.
+  await saveResult();
 }
 
 // ---------------------------------------------------------------------------

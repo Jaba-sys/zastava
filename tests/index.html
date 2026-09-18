@@ -39,6 +39,7 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js";
 import { PLAYER, movePlayer, onGround } from "../js/game/physics.js";
 import { buildMap } from "../js/game/maps/index.js";
+import { WEAPONS, WEAPON_ORDER, Arsenal, damageAt, LOADOUT_SLOTS } from "../js/game/weapons.js";
 
 const out = document.getElementById("out");
 let failed = 0;
@@ -109,6 +110,59 @@ head("Движение и столкновения");
   line(onGround(s, [floor]) === true, "опора под ногами определяется", "стоя на полу");
   s.pos.y = 3;
   line(onGround(s, [floor]) === false, "в воздухе опоры нет", "на высоте 3 м");
+}
+
+// ---------------------------------------------------------------------------
+// Оружие
+// ---------------------------------------------------------------------------
+head("Оружие и набор в бой");
+{
+  const need = ["name","about","price","damage","rpm","magazine","reload",
+                "spread","spreadMoving","recoil","falloffStart","falloffEnd",
+                "falloffMin","pellets","zoom"];
+  const broken = WEAPON_ORDER.filter(id => need.some(k => WEAPONS[id][k] === undefined));
+  line(broken.length === 0, "у каждого ствола заполнены все характеристики",
+       broken.length ? "не хватает у: " + broken.join(", ") : WEAPON_ORDER.length + " стволов");
+}
+{
+  const prices = WEAPON_ORDER.map(id => WEAPONS[id].price);
+  const sorted = prices.every((p, i) => i === 0 || p >= prices[i - 1]);
+  line(sorted && prices[0] === 0, "цены идут по возрастанию, первый ствол бесплатный",
+       prices.join(" · "));
+}
+{
+  // Дорогой ствол не должен быть просто сильнее дешёвого на всех дистанциях —
+  // иначе покупка отменяет игру. Проверяем на средней дистанции.
+  const dps = id => damageAt(WEAPONS[id], 30) * WEAPONS[id].pellets * WEAPONS[id].rpm / 60;
+  const best = WEAPON_ORDER.reduce((a, b) => dps(a) > dps(b) ? a : b);
+  line(best !== "lmg" && best !== "sniper",
+       "самый дорогой не сильнее всех на средней дистанции",
+       "на 30 м лучший — " + WEAPONS[best].name);
+}
+{
+  const a = new Arsenal(["sniper", "shotgun"]);
+  const ok = a.current.id === "sniper" && a.select(1) && a.current.id === "shotgun";
+  line(ok, "набор из лобби попадает в бой", a.order.join(" + "));
+}
+{
+  const a = new Arsenal(["rifle", "smg", "sniper", "lmg"]);
+  line(a.order.length === LOADOUT_SLOTS, "в бой берётся не больше двух стволов",
+       a.order.length + " шт.");
+}
+{
+  const a = new Arsenal(["ничего-такого"]);
+  line(a.order[0] === "rifle", "кривой набор заменяется автоматом", a.order.join(", "));
+}
+{
+  const a = new Arsenal(["rifle"]);
+  for (let i = 0; i < WEAPONS.rifle.magazine; i++){ a.canFire(); a.consume(); a.nextShotAt = 0; }
+  const started = a.canFire() === false && a.reloading;
+  line(started, "пустой магазин сам уходит в перезарядку", "после 30 выстрелов");
+}
+{
+  const far = damageAt(WEAPONS.shotgun, 40), near = damageAt(WEAPONS.shotgun, 3);
+  line(far < near * 0.2, "урон дробовика падает с дистанцией",
+       near.toFixed(0) + " вплотную → " + far.toFixed(1) + " на 40 м");
 }
 
 // ---------------------------------------------------------------------------

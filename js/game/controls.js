@@ -24,6 +24,11 @@ export class Controls {
     this.sensitivity = 0.0022;
     this.locked = false;
     this.firing = false;
+    this.aiming = false;        // зажата правая кнопка — прицеливание
+    // Во сколько раз приближает текущий прицел. Ставится из игры и влияет на
+    // чувствительность мыши: если её не поделить, при трёхкратном увеличении
+    // прицел мечется по экрану и попасть невозможно.
+    this.zoomFactor = 1;
     this.onChat = null;        // вызывается по Enter — открыть строку чата
     this.onLockChange = null;
     this.blocked = false;      // true, пока человек печатает в чат
@@ -34,14 +39,20 @@ export class Controls {
   _bind(){
     document.addEventListener("pointerlockchange", () => {
       this.locked = document.pointerLockElement === this.canvas;
-      if (!this.locked) this.keys = {};          // иначе "залипнет" бег
+      if (!this.locked){
+        // Иначе "залипнет" бег и стрельба: клавиши отпускали уже вне игры.
+        this.keys = {};
+        this.firing = false;
+        this.aiming = false;
+      }
       this.onLockChange?.(this.locked);
     });
 
     document.addEventListener("mousemove", e => {
       if (!this.locked) return;
-      this.yaw   -= e.movementX * this.sensitivity;
-      this.pitch -= e.movementY * this.sensitivity;
+      const k = this.sensitivity / this.zoomFactor;
+      this.yaw   -= e.movementX * k;
+      this.pitch -= e.movementY * k;
       // Чуть меньше прямого угла: ровно 90° дают дрожание камеры на полюсе.
       const limit = Math.PI / 2 - 0.02;
       this.pitch = Math.max(-limit, Math.min(limit, this.pitch));
@@ -50,10 +61,14 @@ export class Controls {
     this.canvas.addEventListener("mousedown", e => {
       if (!this.locked) return;
       if (e.button === 0) this.firing = true;
+      if (e.button === 2) this.aiming = true;
     });
     document.addEventListener("mouseup", e => {
       if (e.button === 0) this.firing = false;
+      if (e.button === 2) this.aiming = false;
     });
+    // Правая кнопка — это прицеливание, а не контекстное меню.
+    this.canvas.addEventListener("contextmenu", e => e.preventDefault());
 
     document.addEventListener("keydown", e => {
       if (this.blocked) return;
@@ -68,7 +83,11 @@ export class Controls {
 
     // Уходя из вкладки, снимаем все клавиши: вернувшись, человек не должен
     // обнаружить себя бегущим в стену.
-    window.addEventListener("blur", () => { this.keys = {}; this.firing = false; });
+    window.addEventListener("blur", () => {
+      this.keys = {};
+      this.firing = false;
+      this.aiming = false;
+    });
   }
 
   requestLock(){

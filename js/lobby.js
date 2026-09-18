@@ -2,9 +2,11 @@
 
 import { isConfigured, hasRealtimeDb } from "./firebase.js";
 import { resolvePlayer, forgetPlayer } from "./mypeal-auth.js";
-import { ensurePlayer } from "./profile.js";
+import { ensurePlayer, buyWeapon, setLoadout } from "./profile.js";
 import { MAP_LIST } from "./game/maps/index.js";
+import { WEAPONS, WEAPON_ORDER, LOADOUT_SLOTS } from "./game/weapons.js";
 import { MAX_PLAYERS, MYPEAL_ORIGIN } from "./config.js";
+import { wakeSound, playPurchase, playClick, playDenied } from "./game/sound.js";
 import * as net from "./net/live.js";
 
 const $ = id => document.getElementById(id);
@@ -32,6 +34,7 @@ async function boot(){
   $("sRatio").textContent = ratio(profile.kills, profile.deaths);
 
   renderMaps();
+  renderArmory();
   wire();
 
   if (!hasRealtimeDb){
@@ -92,7 +95,122 @@ function wire(){
     location.href = "index.html";
   };
   $("mypealBtn").onclick = () => open(MYPEAL_ORIGIN, "_blank", "noopener");
+  // Звук браузер разрешает только после действия человека, поэтому будим его
+  // на первом же клике по странице — к матчу он уже готов.
+  document.addEventListener("pointerdown", wakeSound, { once: true });
   $("codeInput").addEventListener("keydown", e => { if (e.key === "Enter") joinByCode(); });
+}
+
+// ---------------------------------------------------------------------------
+// Оружейная
+// ---------------------------------------------------------------------------
+
+function shopSay(text, kind = "err"){
+  const note = $("shopNote");
+  note.textContent = text;
+  note.className = "note show " + kind;
+  clearTimeout(shopSay._timer);
+  shopSay._timer = setTimeout(() => { note.className = "note"; }, 4000);
+}
+
+function renderArmory(){
+  const box = $("weapons");
+  box.innerHTML = "";
+  $("sCoins").textContent = me.coins ?? 0;
+
+  for (const id of WEAPON_ORDER){
+    const w = WEAPONS[id];
+    const owned = me.owned.includes(id);
+    const inUse = me.loadout.includes(id);
+    const slot = me.loadout.indexOf(id) + 1;
+
+    const card = document.createElement("div");
+    card.className = "weapon" + (owned ? " owned" : "") + (inUse ? " on" : "");
+    card.innerHTML = `
+      <div class="weapon-head">
+        <b>${w.name}</b>
+        ${inUse ? `<span class="slot">слот ${slot}</span>` : ""}
+      </div>
+      <i>${w.about}</i>
+      <div class="bars">
+        ${bar("урон", w.damage * w.pellets, 110)}
+        ${bar("темп", w.rpm, 950)}
+        ${bar("точность", 1 / (w.spread + 0.004), 220)}
+        ${bar("запас", w.magazine, 100)}
+      </div>
+      <div class="weapon-foot"></div>`;
+
+    const foot = card.querySelector(".weapon-foot");
+    if (!owned){
+      const price = document.createElement("span");
+      price.className = "price";
+      price.textContent = w.price + " монет";
+      const buy = document.createElement("button");
+      buy.type = "button";
+      buy.className = "btn btn-ghost";
+      buy.textContent = "Купить";
+      buy.disabled = (me.coins ?? 0) < w.price;
+      buy.onclick = () => purchase(id);
+      foot.append(price, buy);
+    } else {
+      const state = document.createElement("span");
+      state.className = "price owned-mark";
+      state.textContent = inUse ? "в бою" : "куплено";
+      const pick = document.createElement("button");
+      pick.type = "button";
+      pick.className = "btn btn-ghost";
+      pick.textContent = inUse ? "Убрать" : "В бой";
+      pick.onclick = () => toggleSlot(id);
+      foot.append(state, pick);
+    }
+    box.append(card);
+  }
+}
+
+/** Полоска характеристики. Чисто на глаз: точные числа тут никому не нужны. */
+function bar(label, value, max){
+  const pct = Math.max(4, Math.min(100, Math.round(value / max * 100)));
+  return `<div class="bar"><span>${label}</span><u><i style="width:${pct}%"></i></u></div>`;
+}
+
+async function purchase(id){
+  const w = WEAPONS[id];
+  try {
+    const result = await buyWeapon(me.uid, me, id);
+    if (!result.ok){ playDenied(); return shopSay(result.reason); }
+    me = { ...me, ...result.player };
+    playPurchase();
+    shopSay(`${w.name} куплен. Нажми «В бой», чтобы взять его с собой.`, "ok");
+    renderArmory();
+  } catch (error){
+    playDenied();
+    shopSay("Не получилось купить: " + error.message);
+  }
+}
+
+async function toggleSlot(id){
+  let next;
+  if (me.loadout.includes(id)){
+    next = me.loadout.filter(x => x !== id);
+    if (!next.length) { playDenied(); return shopSay("Нельзя идти в бой без оружия."); }
+  } else if (me.loadout.length < LOADOUT_SLOTS){
+    next = [...me.loadout, id];
+  } else {
+    // Слоты заняты — меняем второй, а не отказываем: отказ заставил бы сначала
+    // что-то убирать, и это лишний клик на ровном месте.
+    next = [me.loadout[0], id];
+  }
+
+  try {
+    const result = await setLoadout(me.uid, me, next);
+    if (!result.ok){ playDenied(); return shopSay(result.reason); }
+    me = { ...me, ...result.player };
+    playClick();
+    renderArmory();
+  } catch (error){
+    playDenied();
+    shopSay("Не получилось сохранить набор: " + error.message);
+  }
 }
 
 // ---------------------------------------------------------------------------

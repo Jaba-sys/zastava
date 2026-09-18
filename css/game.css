@@ -44,6 +44,8 @@ body.in-game::before{display:none}
   position:fixed; top:18px; left:50%; transform:translateX(-50%);
   display:flex; gap:10px; pointer-events:none;
 }
+/* На телефоне Tab нажать нечем, поэтому счёт вверху сам по себе кнопка табло. */
+body.touch #topbar{pointer-events:auto; cursor:pointer}
 .chip{
   display:flex; align-items:baseline; gap:5px;
   background:rgba(10,12,13,.55); backdrop-filter:blur(6px);
@@ -98,11 +100,23 @@ body.in-game::before{display:none}
 .ammo span{color:rgba(236,231,219,.3)}
 .ammo u{text-decoration:none; font-family:var(--display); font-size:18px; color:rgba(236,231,219,.45)}
 
-/* ---------- подсказка по карте ---------- */
+/* ---------- подсказка по карте ----------
+   Была внизу по центру — ровно там, где модель оружия, и читалась плохо.
+   Подняли под верхнюю строку и гасим через двенадцать секунд: в начале боя
+   она нужна, дальше только мешает. */
 #hint{
-  position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
-  font-size:12px; color:rgba(236,231,219,.32); pointer-events:none;
-  max-width:60ch; text-align:center;
+  position:fixed; top:88px; left:50%; transform:translateX(-50%);
+  font-size:12.5px; color:rgba(236,231,219,.55); pointer-events:none;
+  max-width:62ch; text-align:center;
+  text-shadow:0 1px 6px rgba(0,0,0,.9);
+  /* Ждём, пока уйдёт название карты: на невысоком экране они иначе налезают
+     друг на друга и не читается ни то, ни другое. */
+  opacity:0;
+  animation:hintFade 12s 3.4s forwards;
+}
+@keyframes hintFade{
+  0%, 78%{opacity:1}
+  100%{opacity:0}
 }
 
 /* ---------- чат ---------- */
@@ -195,3 +209,135 @@ body.in-game::before{display:none}
 .finish-stats b{display:block; font-family:var(--display); font-size:38px; font-weight:500; color:var(--paper)}
 .finish-stats span{font-size:12px; color:var(--muted)}
 #finish .btn{width:auto; padding:12px 26px; text-decoration:none; display:inline-block}
+
+/* ---------- прицел винтовки ----------
+   Не картинка, а две фигуры: тёмная виньетка по краям и тонкое кольцо.
+   Включается классом на body, чтобы не перерисовывать разметку каждый кадр. */
+#scope{
+  position:fixed; inset:0; pointer-events:none; opacity:0;
+  transition:opacity .12s;
+  background:radial-gradient(circle at center,
+    transparent 0 26vh, rgba(0,0,0,.94) 27vh 100%);
+}
+#scope i{
+  position:absolute; left:50%; top:50%;
+  width:52vh; height:52vh; margin:-26vh 0 0 -26vh;
+  border:1px solid rgba(201,184,150,.45); border-radius:50%;
+}
+#scope i::before, #scope i::after{
+  content:""; position:absolute; background:rgba(201,184,150,.35);
+}
+#scope i::before{left:50%; top:6%; bottom:6%; width:1px; margin-left:-.5px}
+#scope i::after{top:50%; left:6%; right:6%; height:1px; margin-top:-.5px}
+body.scoped #scope{opacity:1}
+body.scoped #cross{opacity:0}
+
+/* ---------- меню паузы ---------- */
+#pauseBox{
+  display:none; flex-direction:column; align-items:stretch; gap:10px;
+  width:min(280px, 80vw); margin:18px 0 6px;
+}
+#start.paused #pauseBox{display:flex}
+#start.paused{cursor:default}
+#pauseBox .btn{width:100%; margin:0}
+
+.volume{
+  display:flex; align-items:center; gap:10px;
+  padding:9px 12px;
+  background:rgba(30,35,37,.8);
+  border:1px solid var(--line); border-radius:var(--r);
+  font-size:12.5px; color:rgba(236,231,219,.6);
+}
+.volume span{flex-shrink:0}
+.volume input{flex:1; accent-color:var(--signal); cursor:pointer}
+.volume b{
+  font-family:var(--display); font-size:14px; color:var(--paper);
+  width:26px; text-align:right; flex-shrink:0;
+}
+
+/* ---------- управление с телефона ----------
+   Кнопки крупные и разнесены по углам: на ходу человек не целится пальцем,
+   он бьёт примерно туда. Мелкие кнопки в мобильном шутере не работают. */
+#touchUi{display:none}
+body.touch #touchUi{display:block}
+#touchUi.hidden{display:none !important}
+
+#stick{
+  position:fixed; width:0; height:0; pointer-events:none;
+  opacity:0; transition:opacity .12s; z-index:5;
+}
+#stick.show{opacity:1}
+#stick::before{
+  content:""; position:absolute; left:-58px; top:-58px;
+  width:116px; height:116px; border-radius:50%;
+  border:2px solid rgba(201,184,150,.3);
+  background:rgba(10,12,13,.3);
+}
+#stick i{
+  position:absolute; left:-24px; top:-24px;
+  width:48px; height:48px; border-radius:50%;
+  background:rgba(201,184,150,.55);
+  border:1px solid rgba(236,231,219,.5);
+}
+
+#touchButtons{
+  position:fixed; right:16px; bottom:16px; z-index:6;
+  display:grid; gap:10px;
+  grid-template-columns:repeat(3, 68px);
+  grid-template-areas:
+    "reload swap   aim"
+    "crouch jump   fire";
+}
+.tbtn-reload{grid-area:reload}
+.tbtn-swap{grid-area:swap}
+.tbtn-aim{grid-area:aim}
+.tbtn-crouch{grid-area:crouch}
+.tbtn-jump{grid-area:jump}
+.tbtn-fire{grid-area:fire}
+
+.tbtn{
+  width:68px; height:68px; margin:0; padding:0;
+  border-radius:50%;
+  background:rgba(10,12,13,.5);
+  border:1.5px solid rgba(201,184,150,.32);
+  color:rgba(236,231,219,.85);
+  font-family:var(--display); font-size:12px; letter-spacing:.04em;
+  -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent;
+  touch-action:none;
+}
+.tbtn.down{background:rgba(232,163,23,.35); border-color:var(--signal)}
+.tbtn.on{border-color:var(--signal); color:var(--signal)}
+.tbtn-fire{
+  width:88px; height:88px; font-size:14px;
+  background:rgba(210,80,60,.28); border-color:rgba(210,80,60,.6);
+}
+.tbtn-fire.down{background:rgba(210,80,60,.6)}
+
+.tbtn-pause{
+  position:fixed; top:14px; left:14px; z-index:6;
+  width:44px; height:44px; font-size:15px;
+}
+
+/* На телефоне нижняя строка HUD не должна лезть под кнопки. Патроны уезжают
+   влево, к здоровью: справа внизу теперь кнопка огня, и цифры под ней не
+   читались вовсе. */
+@media (pointer: coarse){
+  #bottombar{bottom:14px; left:16px; right:16px; justify-content:flex-start; gap:22px}
+  .hp-track{width:130px}
+  .hp b{font-size:24px}
+  .ammo b{font-size:26px}
+  .ammo i{display:none}
+  #chat{bottom:120px; width:min(300px,52vw)}
+  #hint{font-size:11.5px; max-width:44ch}
+  #touchButtons{bottom:12px; right:12px}
+}
+
+/* Узкий экран: кнопки поменьше, иначе перекрывают полкарты. */
+@media (pointer: coarse) and (max-height: 420px){
+  #touchButtons{grid-template-columns:repeat(3, 56px); gap:8px}
+  .tbtn{width:56px; height:56px; font-size:11px}
+  .tbtn-fire{width:72px; height:72px}
+}
+
+/* Заработанные монеты на итоговом экране — золотом, чтобы глаз цеплялся. */
+.finish-stats .earned b{color:var(--signal)}

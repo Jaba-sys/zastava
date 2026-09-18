@@ -20,6 +20,8 @@
 <div id="cross"><i></i><i></i><i></i><i></i></div>
 <div id="hitmark"><i></i><i></i></div>
 <div id="damage"></div>
+<!-- окуляр винтовки: чёрная рамка вокруг кружка, видна только при прицеливании -->
+<div id="scope"><i></i></div>
 
 <!-- верхняя строка: счёт и время -->
 <div id="topbar">
@@ -63,11 +65,24 @@
 <!-- крупные надписи -->
 <div id="banner"><b></b><span></span></div>
 
-<!-- экран захвата мыши -->
+<!-- экран захвата мыши и он же меню паузы -->
 <div id="start">
-  <b>Застава</b>
-  <span>Нажми, чтобы играть</span>
-  <em>W A S D — движение · мышь — обзор · ЛКМ — огонь · Enter — чат · Tab — табло</em>
+  <b id="startTitle">Застава</b>
+  <span id="startSub">Нажми, чтобы играть</span>
+
+  <div id="pauseBox">
+    <button class="btn btn-main" id="resumeBtn" type="button">Продолжить</button>
+
+    <label class="volume">
+      <span>Громкость</span>
+      <input id="volume" type="range" min="0" max="100" step="1">
+      <b id="volumeValue">70</b>
+    </label>
+
+    <button class="btn btn-ghost" id="leaveBtn" type="button">Выйти в лобби</button>
+  </div>
+
+  <em>W A S D — движение · ПКМ — прицел · R — перезарядка · 1 2 — оружие · Tab — табло · Enter — чат · Esc — пауза</em>
 </div>
 
 <!-- загрузка -->
@@ -82,6 +97,7 @@
   <div class="finish-stats">
     <div><b id="finishKills">0</b><span>убийств</span></div>
     <div><b id="finishDeaths">0</b><span>смертей</span></div>
+    <div class="earned"><b id="finishCoins">+0</b><span>монет</span></div>
   </div>
   <a class="btn btn-main" href="lobby.html">Вернуться в лобби</a>
 </div>

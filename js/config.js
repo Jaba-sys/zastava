@@ -31,7 +31,7 @@ export const firebaseConfig = {
   //   https://mymessage-73c49-default-rtdb.europe-west1.firebasedatabase.app
   // Впиши его сюда. Пока строка пустая, игра честно скажет об этом на входе,
   // а не упадёт с невнятной ошибкой.
-  databaseURL: "https://mymessage-73c49-default-rtdb.europe-west1.firebasedatabase.app/"
+  databaseURL: ""
 };
 
 // Адрес мессенджера, куда игра отправляет человека за пропуском.

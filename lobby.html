@@ -26,6 +26,7 @@
       <div class="stat"><b id="sKills">0</b><span>убийства</span></div>
       <div class="stat"><b id="sMatches">0</b><span>матчи</span></div>
       <div class="stat"><b id="sRatio">0</b><span>у/с</span></div>
+      <div class="stat coins"><b id="sCoins">0</b><span>монеты</span></div>
     </div>
     <div class="top-actions">
       <button class="link" id="mypealBtn" type="button">MyPeal</button>
@@ -62,6 +63,16 @@
       <button class="btn btn-main" id="createBtn" type="button">Создать матч</button>
     </section>
 
+    <section class="panel armory">
+      <h2>Оружейная</h2>
+      <p class="armory-hint">
+        Монеты капают за убийства и за доигранный матч. В бой берёшь два ствола —
+        нажми на купленный, чтобы поставить его в набор или убрать.
+      </p>
+      <div class="weapons" id="weapons"></div>
+      <div class="note" id="shopNote"></div>
+    </section>
+
     <section class="panel">
       <h2>Зайти к своим</h2>
       <div class="join-row">
@@ -77,7 +88,15 @@
 
   </main>
 
-  <footer class="hints">
+  <footer class="hints touch-hints">
+    <span><b>Слева</b> стик движения</span>
+    <span><b>Справа</b> обзор пальцем</span>
+    <span><b>Огонь</b> большая кнопка</span>
+    <span><b>Счёт вверху</b> табло</span>
+    <span><b>II</b> пауза и выход</span>
+  </footer>
+
+  <footer class="hints key-hints">
     <span><b>W A S D</b> движение</span>
     <span><b>Shift</b> бег</span>
     <span><b>Ctrl</b> присесть</span>
@@ -86,6 +105,8 @@
     <span><b>R</b> перезарядка</span>
     <span><b>Tab</b> табло</span>
     <span><b>Enter</b> чат</span>
+    <span><b>ПКМ</b> прицел</span>
+    <span><b>Esc</b> пауза</span>
   </footer>
 
 </div>
