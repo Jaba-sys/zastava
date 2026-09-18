@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Застава — лобби</title>
 
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1113">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Застава">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap&subset=cyrillic,latin" rel="stylesheet">
@@ -29,6 +38,8 @@
       <div class="stat coins"><b id="sCoins">0</b><span>монеты</span></div>
     </div>
     <div class="top-actions">
+      <button class="link" id="installBtn" type="button" hidden>Установить</button>
+      <a class="link" href="install.html">На телефон</a>
       <button class="link" id="mypealBtn" type="button">MyPeal</button>
       <button class="link" id="outBtn" type="button">Выйти</button>
     </div>
@@ -60,6 +71,21 @@
         <button class="mode" data-mode="team" type="button">
           <b>Команда на команду</b><i>до 40 убийств, стороны набираются поровну</i>
         </button>
+      </div>
+
+      <h2>Кого пускаем</h2>
+      <div class="room-setup">
+        <div class="setup-row">
+          <span>Сколько игроков</span>
+          <div class="sizes" id="sizes"></div>
+        </div>
+        <label class="setup-row toggle-row">
+          <span>
+            Только по коду
+            <i>комнаты не будет в списке — войдут те, кому ты дашь код</i>
+          </span>
+          <input type="checkbox" id="privInput">
+        </label>
       </div>
 
       <button class="btn btn-main" id="createBtn" type="button">Создать матч</button>

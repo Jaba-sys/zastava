@@ -36,17 +36,40 @@ export function roomCode(){
 // Список комнат
 // ---------------------------------------------------------------------------
 
+/** Через сколько без единого удара пульса комната считается брошенной. */
+const STALE_MS = 60_000;
+
 export function watchRooms(callback){
   return onValue(ref(rtdb, "roomIndex"), snap => {
     const all = snap.val() || {};
-    const list = Object.entries(all)
-      .map(([id, meta]) => ({ id, ...meta }))
-      // Комнаты, про которые давно ничего не слышно, показывать незачем:
-      // хозяин мог закрыть вкладку так, что onDisconnect не сработал.
-      .filter(r => Date.now() - (r.beat || 0) < 60_000)
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    callback(list);
+    const rows = Object.entries(all).map(([id, meta]) => ({ id, ...meta }));
+
+    // Брошенные комнаты не просто прячем, а подметаем: раньше они висели в
+    // базе вечно, потому что убрать их мог только хозяин, а хозяин как раз и
+    // ушёл. Теперь любой, кто открыл лобби, сносит пустые — правила базы это
+    // разрешают ровно для комнат, в которых не осталось ни одного игрока.
+    const live = [];
+    for (const room of rows){
+      if (Date.now() - (room.beat || 0) > STALE_MS) sweepRoom(room.id);
+      else live.push(room);
+    }
+
+    live.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    callback(live);
   });
+}
+
+/** Тихо убрать комнату, в которой никого не осталось. Ошибки прав — не беда. */
+export async function sweepRoom(roomId){
+  try {
+    const players = await get(ref(rtdb, `rooms/${roomId}/players`));
+    if (players.exists() && players.numChildren() > 0) return false;
+    await remove(ref(rtdb, `rooms/${roomId}`)).catch(() => {});
+    await remove(ref(rtdb, `roomIndex/${roomId}`)).catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function findRoomByCode(code){
@@ -60,7 +83,7 @@ export async function findRoomByCode(code){
 // Комната
 // ---------------------------------------------------------------------------
 
-export async function createRoom({ map, mode, hostUid, hostSession, hostName, maxPlayers }){
+export async function createRoom({ map, mode, hostUid, hostSession, hostName, maxPlayers, priv }){
   const id = push(ref(rtdb, "rooms")).key;
   const code = roomCode();
   const meta = {
@@ -71,7 +94,11 @@ export async function createRoom({ map, mode, hostUid, hostSession, hostName, ma
     // в Realtime Database сверять можно только с auth.uid, а он анонимный.
     hostSession,
     hostName,
-    maxPlayers,
+    maxPlayers: Math.max(2, Math.min(16, maxPlayers | 0 || 4)),
+    // Закрытая комната не показывается в списке. Это не «безопасность» — id и
+    // код всё равно лежат в базе, — а способ играть своей компанией, не собирая
+    // случайных людей. Кто знает код, тот войдёт.
+    priv: !!priv,
     state: ROOM_STATE.LOBBY,
     createdAt: Date.now(),
     beat: Date.now(),
@@ -82,16 +109,67 @@ export async function createRoom({ map, mode, hostUid, hostSession, hostName, ma
   return { id, code, meta };
 }
 
-/** Комната живёт, пока хозяин подаёт признаки жизни. */
-export function hostHeartbeat(roomId){
-  const stop = setInterval(() => {
-    update(ref(rtdb, `roomIndex/${roomId}`), { beat: Date.now() }).catch(() => {});
-  }, 15_000);
+/**
+ * Пульс комнаты. Его подаёт ЛЮБОЙ находящийся в ней игрок, а не только хозяин.
+ *
+ * Раньше пульс был обязанностью хозяина, и на нём же висело обещание базе
+ * снести комнату при обрыве связи. Из-за этого стоило хозяину закрыть вкладку —
+ * и матч заканчивался у всех остальных посреди боя. Теперь наоборот: комната
+ * живёт, пока в ней есть хоть кто-то, и исчезает, когда не осталось никого.
+ */
+export function roomHeartbeat(roomId, playersCount){
+  const beat = () => {
+    update(ref(rtdb, `roomIndex/${roomId}`), {
+      beat: Date.now(),
+      count: playersCount?.() ?? 0
+    }).catch(() => {});
+  };
+  beat();
+  const timer = setInterval(beat, 15_000);
+  return () => clearInterval(timer);
+}
 
-  onDisconnect(ref(rtdb, `roomIndex/${roomId}`)).remove();
-  onDisconnect(ref(rtdb, `rooms/${roomId}`)).remove();
+/** Сколько человек сейчас в комнате. */
+export async function countPlayers(roomId){
+  const snap = await get(ref(rtdb, `rooms/${roomId}/players`));
+  return snap.exists() ? snap.numChildren() : 0;
+}
 
-  return () => clearInterval(stop);
+/** Есть ли куда войти: код есть, комната есть, места остались. */
+export async function roomCapacity(roomId){
+  const [metaSnap, count] = await Promise.all([
+    get(ref(rtdb, `rooms/${roomId}/meta`)),
+    countPlayers(roomId)
+  ]);
+  const meta = metaSnap.val();
+  if (!meta) return { ok: false, reason: "Комната уже закрылась." };
+  const max = meta.maxPlayers || 4;
+  if (count >= max) return { ok: false, reason: `В комнате уже ${count} из ${max} — мест нет.`, meta, count };
+  return { ok: true, meta, count, max };
+}
+
+/**
+ * Закрыть комнату насовсем: хозяин так заканчивает матч, не дожидаясь, пока
+ * разойдутся остальные. Всем, кто внутри, придёт state = over, и игра покажет
+ * итог — выкидывать людей молча было бы грубо.
+ */
+export async function closeRoom(roomId){
+  await setRoomState(roomId, ROOM_STATE.OVER, { winner: "Комнату закрыл хозяин", closedAt: Date.now() })
+    .catch(() => {});
+  // Дать клиентам мгновение увидеть итог и уйти самим, и только потом стирать.
+  setTimeout(() => sweepRoom(roomId), 4000);
+}
+
+/**
+ * Если ушёл последний — комнаты больше нет.
+ *
+ * Зовётся тем, кто выходит, уже ПОСЛЕ того, как убрал себя: раньше проверять
+ * бессмысленно, он сам ещё числится в списке.
+ */
+export async function closeIfEmpty(roomId){
+  const count = await countPlayers(roomId).catch(() => 1);
+  if (count > 0) return false;
+  return sweepRoom(roomId);
 }
 
 export function watchMeta(roomId, callback){
@@ -125,7 +203,12 @@ export async function joinRoom(roomId, sessionUid, player){
     x: 0, y: 0, z: 0, yaw: 0,
     t: serverTimestamp()
   });
-  return () => remove(me).catch(() => {});
+  // Выход: убрать себя и, если больше никого не осталось, закрыть комнату.
+  // Проверку делает именно уходящий — на сервере некому.
+  return async () => {
+    await remove(me).catch(() => {});
+    await closeIfEmpty(roomId).catch(() => {});
+  };
 }
 
 export function watchPlayers(roomId, { onJoin, onUpdate, onLeave }){

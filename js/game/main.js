@@ -25,9 +25,10 @@ import { TouchControls, isTouchDevice } from "./touch.js";
 import {
   wakeSound, setVolume, getVolume, playShot, playRemoteShot, playHit, playHurt,
   playReloadOut, playReloadIn, playSwitch, playDeath, playSpawn, playKill,
-  playMatchEnd, playStep, playChat
+  playMatchEnd, playStep, playChat, playClick
 } from "./sound.js";
 import * as net from "../net/live.js";
+import { registerServiceWorker } from "../pwa.js";
 
 const MATCH_SECONDS = 8 * 60;
 const GOAL = { dm: 25, team: 40 };
@@ -39,6 +40,9 @@ const roomId = params.get("room");
 
 const hud = new Hud();
 const canvas = document.getElementById("view");
+
+// Служебный работник — чтобы игра, открытая как приложение, стартовала из кэша.
+registerServiceWorker();
 
 let me = null;               // { sessionUid, uid, name, tag, team }
 let room = null;             // meta комнаты
@@ -94,6 +98,11 @@ async function start(){
   room = await waitForMeta();
   if (!room) throw new Error("Комната закрылась.");
 
+  // Мест может не остаться, пока человек шёл сюда из лобби. Правила базы такого
+  // всё равно не пустят, но отказ от базы выглядит как поломка — скажем прямо.
+  const seats = await net.roomCapacity(roomId);
+  if (!seats.ok) throw new Error(seats.reason);
+
   map = buildMap(room.map);
   buildScene();
   // Управление создаём до первого возрождения: spawn() ставит controls.yaw.
@@ -109,7 +118,8 @@ async function start(){
   }
 
   leaveRoom = await net.joinRoom(roomId, me.sessionUid, {
-    uid: me.uid, name: me.name, tag: me.tag || null, team: me.team
+    uid: me.uid, name: me.name, tag: me.tag || null, team: me.team,
+    w: arsenal.current.id
   });
 
   spawn();
@@ -336,6 +346,7 @@ function wireNetwork(){
       // Чужой выстрел слышно тише и глуше — по этому звуку и понимаешь,
       // далеко стреляют или уже за спиной.
       playRemoteShot(event.weapon, from.distanceTo(camera.position));
+      remotes.get(event.from)?.kick();
     }
 
     if (event.type === "hit" && event.to === me.sessionUid && self.alive){
@@ -372,17 +383,25 @@ function wireNetwork(){
     if (!self.alive) return;
     net.pushState(roomId, me.sessionUid, {
       x: round(self.pos.x), y: round(self.pos.y), z: round(self.pos.z),
-      yaw: round(controls.yaw), hp: Math.round(self.hp)
+      yaw: round(controls.yaw),
+      // Наклон взгляда и ствол в руках: без них чужой боец стоит с ружьём
+      // строго горизонтально и всегда с автоматом, чем бы ни стрелял.
+      pitch: round(controls.pitch),
+      w: arsenal.current.id,
+      hp: Math.round(self.hp)
     });
   }, 1000 / SEND_HZ);
   stopWatchers.push(() => clearInterval(sender));
 
-  // Обязанности хозяина комнаты: подавать признаки жизни (иначе комната
-  // пропадёт из списка) и подчищать старые события, чтобы ветка не росла
-  // вечно. Хозяин определяется по сессии, а не по uid: правила базы сверяют
-  // именно её.
+  // Пульс комнаты подаёт КАЖДЫЙ, кто в ней есть, а не только хозяин: иначе
+  // стоило хозяину закрыть вкладку — и комната пропадала из списка, хотя бой
+  // в ней идёт. Заодно тем же ударом пульса обновляется число игроков, которое
+  // лобби показывает как «3/8».
+  stopWatchers.push(net.roomHeartbeat(roomId, () => remotes.size + 1));
+
+  // Подчищать старые события — дело хозяина: если это будут делать все сразу,
+  // получится лишний трафик на ровном месте.
   if (room.hostSession === me.sessionUid){
-    stopWatchers.push(net.hostHeartbeat(roomId));
     const pruner = setInterval(() => net.pruneEvents(roomId), 12_000);
     stopWatchers.push(() => clearInterval(pruner));
   }
@@ -430,7 +449,11 @@ function wireInput(){
 
   // ---- телефон ------------------------------------------------------------
   if (isTouchDevice()){
-    touch = new TouchControls(controls, { onReload: reload, onSwap: swap, onPause: openPause });
+    touch = new TouchControls(controls, {
+      onReload: reload, onSwap: swap, onPause: openPause,
+      // Из настройки кнопок возвращаемся туда же, откуда в неё вошли, — в паузу.
+      onEditDone: () => { document.getElementById("start").classList.remove("gone"); openPause(); }
+    });
     // Табло на телефоне открывается тапом по счёту вверху — Tab нажать нечем.
     const bar = document.getElementById("topbar");
     let boardOpen = false;
@@ -465,6 +488,57 @@ function wireInput(){
     controls.requestLock();
   };
   document.getElementById("leaveBtn").onclick = () => leaveMatch();
+
+  // ---- настройка экранных кнопок -----------------------------------------
+  // Кнопка есть смысл только там, где эти кнопки вообще нарисованы.
+  const editBtn = document.getElementById("editTouchBtn");
+  if (!touch) editBtn.remove();
+  else editBtn.onclick = () => {
+    // Меню паузы уезжает, чтобы не закрывать те самые кнопки, которые человек
+    // сейчас двигает; игра при этом остаётся на паузе.
+    document.getElementById("start").classList.add("gone");
+    touch.startEdit();
+  };
+
+  // ---- комната: код и закрытие -------------------------------------------
+  const codeBox = document.getElementById("roomCode");
+  codeBox.textContent = room.code || "—";
+  document.getElementById("copyCodeBtn").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(room.code || "");
+      hud.say("Код скопирован — отправь его своим.");
+    } catch {
+      // На телефоне и без https буфер обмена запрещён: тогда просто выделяем,
+      // чтобы человек скопировал сам. Молчать в этом месте нельзя — выглядит
+      // как сломанная кнопка.
+      hud.say("Скопировать не дали — код на экране: " + (room.code || "—"));
+    }
+    playClick();
+  };
+
+  // Закрыть комнату может только тот, кто её создал: правила базы сверяют
+  // ключ сессии, и у остальных кнопка просто не нужна.
+  const closeBtn = document.getElementById("closeRoomBtn");
+  if (room.hostSession !== me.sessionUid){
+    closeBtn.remove();
+  } else {
+    closeBtn.onclick = async () => {
+      if (closeBtn.dataset.sure !== "1"){
+        closeBtn.dataset.sure = "1";
+        closeBtn.textContent = "Точно закрыть? Нажми ещё раз";
+        setTimeout(() => {
+          if (!closeBtn.isConnected) return;
+          closeBtn.dataset.sure = "";
+          closeBtn.textContent = "Закрыть комнату";
+        }, 4000);
+        return;
+      }
+      closeBtn.disabled = true;
+      closeBtn.textContent = "Закрываем…";
+      await net.closeRoom(roomId).catch(() => {});
+      leaveMatch();
+    };
+  }
 
   const volume = document.getElementById("volume");
   volume.value = Math.round(getVolume() * 100);

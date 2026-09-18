@@ -6,14 +6,17 @@
 // его к последней известной точке плавно — это называется интерполяцией и
 // стоит примерно ничего, а разница видна сразу.
 //
+// Скорость для походки считается ЗДЕСЬ, из того, насколько сдвинулась
+// сглаженная позиция, а не приходит по сети: лишнее поле в каждом пакете
+// двенадцать раз в секунду того не стоит, а результат тот же.
+//
 // Коробка для попаданий берётся от ТЕКУЩЕГО, сглаженного положения, а не от
 // сетевого: стрелять надо туда, где человек нарисован, иначе промахи кажутся
 // несправедливыми.
 
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js";
 import { PLAYER } from "./physics.js";
-
-const TEAM_COLORS = { a: 0xe8a317, b: 0x5aa0d2, free: 0xc9b896 };
+import { Soldier } from "./soldier.js";
 
 export class RemotePlayer {
   constructor(id, data){
@@ -30,28 +33,16 @@ export class RemotePlayer {
     this.shown  = this.target.clone();
     this.targetYaw = data.yaw || 0;
     this.shownYaw = this.targetYaw;
+    this.pitch = data.pitch || 0;
+    this.speed = 0;
 
     this.group = new THREE.Group();
-    const color = TEAM_COLORS[this.team] || TEAM_COLORS.free;
-    const body = new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.1 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x2a2f33, roughness: 0.8 });
-
-    // Силуэт нарочно простой и угловатый: на карте важно мгновенно отличить
-    // человека от ящика, а не рассмотреть на нём швы.
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.8, 0.36), body);
-    torso.position.y = 1.12; torso.castShadow = true;
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), dark);
-    head.position.y = 1.68; head.castShadow = true;
-    const legs = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.72, 0.32), dark);
-    legs.position.y = 0.36; legs.castShadow = true;
-    const gun = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.8), dark);
-    gun.position.set(0.28, 1.2, -0.42);
-
-    this.group.add(torso, head, legs, gun);
+    this.soldier = new Soldier(this.team, data.w || "rifle");
+    this.group.add(this.soldier.root);
     this.group.position.copy(this.shown);
 
     this.label = makeLabel(this.name);
-    this.label.position.y = 2.15;
+    this.label.position.y = 2.25;
     this.group.add(this.label);
 
     this.box = new THREE.Box3();
@@ -61,24 +52,37 @@ export class RemotePlayer {
   apply(data){
     if (typeof data.x === "number") this.target.set(data.x, data.y, data.z);
     if (typeof data.yaw === "number") this.targetYaw = data.yaw;
+    if (typeof data.pitch === "number") this.pitch = data.pitch;
     if (typeof data.hp === "number") this.hp = data.hp;
     if (typeof data.kills === "number") this.kills = data.kills;
     if (typeof data.deaths === "number") this.deaths = data.deaths;
     if (data.team) this.team = data.team;
+    if (data.w) this.soldier.setWeapon(data.w);
     if (data.name && data.name !== this.name){
       this.name = data.name;
       this.group.remove(this.label);
       this.label = makeLabel(this.name);
-      this.label.position.y = 2.15;
+      this.label.position.y = 2.25;
       this.group.add(this.label);
     }
   }
+
+  /** Он выстрелил — дёрнуть ствол. Зовётся из обработчика чужих выстрелов. */
+  kick(){ this.soldier.kick(); }
 
   update(dt){
     // Коэффициент подобран так, чтобы отставание было незаметно, а рывки
     // сгладились: за 100 мс боец проходит почти весь путь до цели.
     const k = 1 - Math.pow(0.0008, dt);
+    const before = this.shown.clone();
     this.shown.lerp(this.target, k);
+
+    // Скорость по земле — для походки. Вертикальное движение не считаем:
+    // падая с обрыва, человек не перебирает ногами быстрее.
+    if (dt > 0){
+      const moved = Math.hypot(this.shown.x - before.x, this.shown.z - before.z) / dt;
+      this.speed += (moved - this.speed) * Math.min(1, dt * 9);
+    }
 
     let diff = this.targetYaw - this.shownYaw;
     while (diff >  Math.PI) diff -= Math.PI * 2;      // кратчайшая сторона
@@ -87,7 +91,13 @@ export class RemotePlayer {
 
     this.group.position.copy(this.shown);
     this.group.rotation.y = this.shownYaw;
-    this.group.visible = this.hp > 0;
+
+    const dead = this.hp <= 0;
+    this.soldier.update(dt, this.speed, this.pitch, dead);
+    // Мёртвый остаётся лежать, но имя над ним гасим — иначе поле боя
+    // превращается в список надписей.
+    this.label.visible = !dead;
+
     this._updateBox();
   }
 
@@ -99,11 +109,9 @@ export class RemotePlayer {
 
   dispose(scene){
     scene.remove(this.group);
-    this.group.traverse(node => {
-      node.geometry?.dispose?.();
-      if (node.material?.map) node.material.map.dispose();
-      node.material?.dispose?.();
-    });
+    this.soldier.dispose();
+    this.label.material.map?.dispose();
+    this.label.material.dispose();
   }
 }
 

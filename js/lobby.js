@@ -8,12 +8,21 @@ import { WEAPONS, WEAPON_ORDER, LOADOUT_SLOTS } from "./game/weapons.js";
 import { MAX_PLAYERS, MYPEAL_ORIGIN } from "./config.js";
 import { wakeSound, playPurchase, playClick, playDenied } from "./game/sound.js";
 import * as net from "./net/live.js";
+import { registerServiceWorker, wireInstallButton } from "./pwa.js";
 
 const $ = id => document.getElementById(id);
 
 let me = null;
 let chosenMap = "karier";
 let chosenMode = "dm";
+// Сколько человек пускать. Двое — это «позвал друга», шестнадцать — свалка;
+// MAX_PLAYERS из config.js остаётся значением по умолчанию.
+const SIZES = [2, 4, 6, 8, 12, 16];
+let chosenSize = SIZES.includes(MAX_PLAYERS) ? MAX_PLAYERS : 4;
+let chosenPrivate = false;
+
+registerServiceWorker();
+wireInstallButton(document.getElementById("installBtn"));
 
 boot().catch(error => say(error.message));
 
@@ -34,6 +43,7 @@ async function boot(){
   $("sRatio").textContent = ratio(profile.kills, profile.deaths);
 
   renderMaps();
+  renderSizes();
   renderArmory();
   wire();
 
@@ -78,7 +88,22 @@ function renderMaps(){
   }
 }
 
+function renderSizes(){
+  const box = $("sizes");
+  box.innerHTML = "";
+  for (const n of SIZES){
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "size" + (n === chosenSize ? " on" : "");
+    button.textContent = n;
+    button.onclick = () => { chosenSize = n; playClick(); renderSizes(); };
+    box.append(button);
+  }
+}
+
 function wire(){
+  $("privInput").onchange = e => { chosenPrivate = e.target.checked; };
+
   for (const button of document.querySelectorAll("[data-mode]")){
     button.onclick = () => {
       chosenMode = button.dataset.mode;
@@ -220,14 +245,19 @@ async function toggleSlot(id){
 async function createRoom(){
   $("createBtn").disabled = true;
   try {
-    const { id } = await net.createRoom({
+    const { id, code } = await net.createRoom({
       map: chosenMap,
       mode: chosenMode,
       hostUid: me.uid,
       hostSession: me.sessionUid,
       hostName: me.name,
-      maxPlayers: MAX_PLAYERS
+      maxPlayers: chosenSize,
+      priv: chosenPrivate
     });
+    // Код закрытой комнаты нигде больше не показать — она не попадёт в список,
+    // а человек уже уходит на страницу боя. Кладём его в адрес, чтобы игра
+    // вывела его на табло, и запоминаем на случай, если человек вернётся.
+    try { sessionStorage.setItem("zastava.lastCode", code); } catch { /* ignore */ }
     // Матч начинается сразу: ждать в пустой комнате скучнее, чем бегать по
     // карте одному в ожидании, пока подтянутся остальные.
     await net.setRoomState(id, net.ROOM_STATE.LIVE, { startedAt: Date.now() });
@@ -245,7 +275,7 @@ async function joinByCode(){
   try {
     const id = await net.findRoomByCode(code);
     if (!id) return say("Комнаты с таким кодом нет. Может, она уже закрылась.");
-    location.href = `game.html?room=${id}`;
+    await enterRoom(id);
   } catch (error){
     say("Не получилось: " + error.message);
   } finally {
@@ -253,9 +283,23 @@ async function joinByCode(){
   }
 }
 
+/**
+ * Вход в комнату с проверкой мест.
+ *
+ * Проверять здесь — не формальность: правила базы всё равно не дадут войти
+ * лишнему, но отказ прилетел бы уже на странице боя, после загрузки карты, и
+ * выглядел бы как поломка. Лучше сказать честно и сразу.
+ */
+async function enterRoom(id){
+  const check = await net.roomCapacity(id);
+  if (!check.ok){ playDenied(); return say(check.reason); }
+  location.href = `game.html?room=${id}`;
+}
+
 function renderRooms(rooms){
   const list = $("rooms");
-  const open = rooms.filter(r => r.state !== net.ROOM_STATE.OVER);
+  // Закрытые комнаты в списке не показываем — в этом и весь их смысл.
+  const open = rooms.filter(r => r.state !== net.ROOM_STATE.OVER && !r.priv);
 
   if (!open.length){
     list.innerHTML = `<p class="empty">Открытых комнат нет. Создай свою — код можно продиктовать или отправить ссылкой.</p>`;
@@ -267,14 +311,17 @@ function renderRooms(rooms){
     const card = document.createElement("div");
     card.className = "room";
     const mapName = MAP_LIST.find(m => m.id === room.map)?.name || room.map;
+    const max = room.maxPlayers || 4;
+    const busy = (room.count || 0) >= max;
     card.innerHTML = `
       <div>
         <b>${escape(room.hostName || "Боец")}</b>
         <i>${mapName} · ${room.mode === "team" ? "команда на команду" : "каждый сам за себя"}</i>
       </div>
+      <span class="seats${busy ? " full" : ""}">${room.count || 0}/${max}</span>
       <span class="code">${room.code}</span>
-      <button class="btn btn-ghost" type="button">Войти</button>`;
-    card.querySelector("button").onclick = () => { location.href = `game.html?room=${room.id}`; };
+      <button class="btn btn-ghost" type="button"${busy ? " disabled" : ""}>${busy ? "Полно" : "Войти"}</button>`;
+    card.querySelector("button").onclick = () => enterRoom(room.id);
     list.append(card);
   }
 }

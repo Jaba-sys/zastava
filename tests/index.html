@@ -233,7 +233,7 @@ function reachability(id, range){
   return { map, seen, nodeFor };
 }
 
-for (const [id, range, title] of [["karier", 76, "Карьер"], ["depo", 70, "Депо"]]){
+for (const [id, range, title] of [["karier", 76, "Карьер"], ["depo", 70, "Депо"], ["teplitsy", 76, "Теплицы"], ["plotina", 70, "Плотина"]]){
   head("Карта «" + title + "»");
   const { map, seen, nodeFor } = reachability(id, range);
   map.spawns.forEach((s, n) => {

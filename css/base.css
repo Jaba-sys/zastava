@@ -119,6 +119,23 @@ body::before{
     #c9b896;
 }
 
+/* Теплицы: утро, четыре стеклянных прямоугольника вокруг двора. */
+.map-art.teplitsy{
+  background:
+    linear-gradient(0deg, transparent 47%, rgba(185,195,192,.55) 47%, rgba(185,195,192,.55) 53%, transparent 53%),
+    linear-gradient(90deg, transparent 47%, rgba(185,195,192,.55) 47%, rgba(185,195,192,.55) 53%, transparent 53%),
+    repeating-linear-gradient(90deg, rgba(200,228,230,.55) 0 7px, rgba(120,150,150,.25) 7px 10px),
+    #574b39;
+}
+
+/* Плотина: серый гребень поперёк, уступы вниз, тёмная вода сверху. */
+.map-art.plotina{
+  background:
+    linear-gradient(180deg, #2c5568 0 30%, #b6b4a8 30% 38%, #9d9c91 38% 50%,
+                            #8c8b81 50% 62%, #7b7a71 62% 74%, #6a6d68 74% 100%),
+    #6a6d68;
+}
+
 /* Депо: ночь, пятна фонарей, светлая полоса поворотного круга. */
 .map-art.depo{
   background:

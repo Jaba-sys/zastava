@@ -280,22 +280,16 @@ body.touch #touchUi{display:block}
   border:1px solid rgba(236,231,219,.5);
 }
 
+/* Кнопки лежат каждая на своих координатах, а не в сетке: их можно двигать
+   пальцем в режиме настройки, и сетка тут только мешала бы. Слой сквозной —
+   ловят касания сами кнопки, а не он. */
 #touchButtons{
-  position:fixed; right:16px; bottom:16px; z-index:6;
-  display:grid; gap:10px;
-  grid-template-columns:repeat(3, 68px);
-  grid-template-areas:
-    "reload swap   aim"
-    "crouch jump   fire";
+  position:fixed; inset:0; z-index:6;
+  pointer-events:none;
 }
-.tbtn-reload{grid-area:reload}
-.tbtn-swap{grid-area:swap}
-.tbtn-aim{grid-area:aim}
-.tbtn-crouch{grid-area:crouch}
-.tbtn-jump{grid-area:jump}
-.tbtn-fire{grid-area:fire}
 
 .tbtn{
+  position:absolute; transform:translate(-50%,-50%);
   width:68px; height:68px; margin:0; padding:0;
   border-radius:50%;
   background:rgba(10,12,13,.5);
@@ -303,20 +297,54 @@ body.touch #touchUi{display:block}
   color:rgba(236,231,219,.85);
   font-family:var(--display); font-size:12px; letter-spacing:.04em;
   -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent;
-  touch-action:none;
+  touch-action:none; pointer-events:auto;
 }
 .tbtn.down{background:rgba(232,163,23,.35); border-color:var(--signal)}
 .tbtn.on{border-color:var(--signal); color:var(--signal)}
 .tbtn-fire{
-  width:88px; height:88px; font-size:14px;
   background:rgba(210,80,60,.28); border-color:rgba(210,80,60,.6);
 }
 .tbtn-fire.down{background:rgba(210,80,60,.6)}
 
-.tbtn-pause{
-  position:fixed; top:14px; left:14px; z-index:6;
-  width:44px; height:44px; font-size:15px;
+/* ---------- режим настройки кнопок ---------- */
+#touchEdit{display:none}
+#touchUi.editing #touchEdit{
+  display:block; position:fixed; z-index:9;
+  left:50%; top:14px; transform:translateX(-50%);
+  width:min(440px, calc(100vw - 24px));
+  padding:12px 14px;
+  background:rgba(12,14,16,.92);
+  border:1px solid rgba(201,184,150,.28); border-radius:12px;
+  backdrop-filter:blur(6px);
 }
+#touchUi.editing .tbtn{
+  border-style:dashed; opacity:.95;
+}
+#touchUi.editing .tbtn.picked{
+  border-style:solid; border-color:var(--signal);
+  box-shadow:0 0 0 3px rgba(232,163,23,.25);
+}
+#touchUi.editing #touchEdit.low{top:auto; bottom:14px}
+.edit-head{display:flex; align-items:flex-start; justify-content:space-between; gap:10px}
+.edit-flip{
+  flex-shrink:0; width:30px; height:30px; border-radius:8px; cursor:pointer;
+  background:rgba(255,255,255,.06); border:1px solid rgba(201,184,150,.25);
+  color:rgba(236,231,219,.8); font-size:15px; line-height:1;
+}
+.edit-head b{display:block; font-family:var(--display); font-size:15px; letter-spacing:.04em}
+.edit-head i{display:block; margin-top:2px; font-size:11.5px; opacity:.72; font-style:normal}
+.edit-pick{display:flex; flex-wrap:wrap; gap:6px; margin:10px 0}
+.edit-chip{
+  padding:5px 10px; border-radius:999px; font-size:11.5px;
+  background:rgba(255,255,255,.05); border:1px solid rgba(201,184,150,.25);
+  color:rgba(236,231,219,.8); cursor:pointer;
+}
+.edit-chip.on{border-color:var(--signal); color:var(--signal); background:rgba(232,163,23,.12)}
+.edit-size{display:flex; align-items:center; gap:10px; font-size:12px}
+.edit-size input{flex:1}
+.edit-size b{width:44px; text-align:right; color:var(--signal)}
+.edit-actions{display:flex; gap:8px; margin-top:10px}
+.edit-actions .btn{flex:1; padding:9px 10px; font-size:12px}
 
 /* На телефоне нижняя строка HUD не должна лезть под кнопки. Патроны уезжают
    влево, к здоровью: справа внизу теперь кнопка огня, и цифры под ней не
@@ -329,15 +357,50 @@ body.touch #touchUi{display:block}
   .ammo i{display:none}
   #chat{bottom:120px; width:min(300px,52vw)}
   #hint{font-size:11.5px; max-width:44ch}
-  #touchButtons{bottom:12px; right:12px}
 }
 
-/* Узкий экран: кнопки поменьше, иначе перекрывают полкарты. */
-@media (pointer: coarse) and (max-height: 420px){
-  #touchButtons{grid-template-columns:repeat(3, 56px); gap:8px}
-  .tbtn{width:56px; height:56px; font-size:11px}
-  .tbtn-fire{width:72px; height:72px}
-}
+/* Размеры кнопок задаются из touch.js: их можно менять руками, и правило
+   в CSS пересилило бы выбор человека. Тут остаётся только то, что размера
+   не касается. */
 
 /* Заработанные монеты на итоговом экране — золотом, чтобы глаз цеплялся. */
 .finish-stats .earned b{color:var(--signal)}
+
+/* ---------- код комнаты и её закрытие в паузе ---------- */
+.room-line{
+  display:flex; align-items:center; gap:10px; width:100%;
+  padding:9px 11px; border-radius:9px;
+  background:rgba(255,255,255,.04); border:1px solid rgba(201,184,150,.18);
+  font-size:12.5px;
+}
+.room-line > span{color:rgba(236,231,219,.5)}
+.room-line b{
+  font-family:var(--display); font-size:18px; letter-spacing:.16em;
+  color:var(--signal); flex:1;
+}
+.room-line .link{
+  background:none; border:0; padding:0; cursor:pointer;
+  color:rgba(236,231,219,.6); font-size:12px; text-decoration:underline;
+}
+.room-line .link:hover{color:var(--signal)}
+
+/* Закрыть комнату — действие, которое нельзя отменить, поэтому оно и выглядит
+   иначе, и требует второго нажатия (см. main.js). */
+.btn-danger{
+  background:rgba(210,80,60,.14); border:1px solid rgba(210,80,60,.5);
+  color:#e79383;
+}
+.btn-danger:hover{background:rgba(210,80,60,.26)}
+.btn-danger:disabled{opacity:.55; cursor:default}
+
+/* На телефоне в горизонтальном положении высоты всего около 400 точек — окно
+   настройки не должно съедать её целиком, иначе двигать кнопки не над чем. */
+@media (max-height: 470px){
+  #touchUi.editing #touchEdit{top:8px; padding:9px 11px; width:min(560px, calc(100vw - 16px))}
+  #touchUi.editing #touchEdit.low{top:auto; bottom:8px}
+  .edit-head i{display:none}
+  .edit-pick{margin:8px 0; flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px}
+  .edit-chip{flex-shrink:0; padding:4px 9px}
+  .edit-actions{margin-top:8px}
+  .edit-actions .btn{padding:7px 10px}
+}

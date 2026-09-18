@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Застава — вход</title>
 
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1113">
+<meta name="description" content="Браузерный онлайновый шутер от первого лица. Четыре карты, вход через MyPeal.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Застава">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap&subset=cyrillic,latin" rel="stylesheet">
@@ -18,7 +28,7 @@
 
   <section class="brand">
     <h1 class="mark">Застава
-      <span>Браузерный шутер на четверых. Заходишь своим аккаунтом MyPeal, стреляешь, забираешь очки.</span>
+      <span>Браузерный шутер. Заходишь своим аккаунтом MyPeal, стреляешь, забираешь очки.</span>
     </h1>
 
     <div class="maps">
@@ -30,9 +40,20 @@
         <span class="map-art depo"></span>
         <b>Депо</b><i>ночь, вагоны, поворотный круг в центре</i>
       </div>
+      <div class="map">
+        <span class="map-art teplitsy"></span>
+        <b>Теплицы</b><i>утро, стекло и гряды: тебя видно насквозь</i>
+      </div>
+      <div class="map">
+        <span class="map-art plotina"></span>
+        <b>Плотина</b><i>гребень, три уступа и машинный зал внизу</i>
+      </div>
     </div>
 
-    <p class="roster">До 4 игроков в матче. Очки, убийства и статистика привязаны к аккаунту мессенджера.</p>
+    <p class="roster">
+      От двух до шестнадцати игроков в матче — сколько пускать, решает тот, кто
+      создал комнату. Очки, убийства и монеты привязаны к аккаунту мессенджера.
+    </p>
   </section>
 
   <section class="gate" id="gate">
@@ -46,6 +67,11 @@
     <button class="link" id="aboutBtn" type="button">Открыть мессенджер</button>
 
     <div class="note" id="note"></div>
+
+    <button class="btn btn-ghost install-btn" id="installBtn" type="button" hidden>
+      Установить на телефон
+    </button>
+    <a class="link" href="install.html">Как играть с телефона как в приложение</a>
 
     <p class="fineprint">
       Игра получит только имя и тег из твоего профиля. Переписку она не видит.

@@ -6,8 +6,15 @@ import { isConfigured } from "./firebase.js";
 import { resolvePlayer, goToMyPeal } from "./mypeal-auth.js";
 import { ensurePlayer } from "./profile.js";
 import { MYPEAL_ORIGIN } from "./config.js";
+import { registerServiceWorker, wireInstallButton } from "./pwa.js";
 
 const $ = id => document.getElementById(id);
+
+// Служебный работник и кнопка установки — до всякой проверки ключей Firebase:
+// поставить игру на телефон можно и до того, как она настроена, а если ключи
+// не вписаны, экран входа вообще не доходит до этого места.
+registerServiceWorker();
+wireInstallButton(document.getElementById("installBtn"));
 
 function say(text, kind = "err"){
   const note = $("note");

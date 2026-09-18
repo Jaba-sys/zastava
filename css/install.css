@@ -1,0 +1,69 @@
+/* install.css — страница «как поставить на телефон».
+   Читают её чаще всего с того самого телефона, поэтому одна колонка, крупный
+   шрифт и никаких горизонтальных таблиц. */
+
+.install-shell{
+  max-width:980px; margin:0 auto; padding:28px 18px 48px;
+  display:flex; flex-direction:column; gap:18px;
+}
+
+.install-top{display:flex; gap:16px; align-items:flex-start}
+.install-top img{border-radius:14px; flex-shrink:0}
+.install-top h1{
+  font-family:var(--display); font-weight:500; font-size:26px;
+  letter-spacing:.05em; margin:0 0 6px;
+}
+.install-top p{margin:0; font-size:14px; line-height:1.6; color:rgba(236,231,219,.68)}
+
+.already{
+  padding:11px 14px; border-radius:9px; font-size:13.5px;
+  background:rgba(120,190,120,.1); border:1px solid rgba(120,190,120,.35);
+  color:#a9d6a3;
+}
+
+.big-install{max-width:340px; padding:14px 18px; font-size:15px}
+
+.cards{
+  display:grid; gap:14px;
+  grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.card{
+  padding:16px 17px; border-radius:12px;
+  background:rgba(255,255,255,.03);
+  border:1px solid rgba(201,184,150,.16);
+}
+.card.wide{grid-column:1 / -1}
+.card h2{
+  display:flex; align-items:center; gap:9px; margin:0 0 10px;
+  font-family:var(--display); font-weight:500; font-size:16px; letter-spacing:.05em;
+}
+.badge{
+  padding:3px 9px; border-radius:999px; font-size:11px; letter-spacing:.06em;
+  background:rgba(232,163,23,.14); border:1px solid rgba(232,163,23,.45);
+  color:var(--signal);
+}
+.badge.ios{
+  background:rgba(120,160,210,.14); border-color:rgba(120,160,210,.45); color:#8fb6df;
+}
+
+.card ol, .card ul{margin:0; padding-left:20px; display:flex; flex-direction:column; gap:8px}
+.card li{font-size:13.5px; line-height:1.55; color:rgba(236,231,219,.78)}
+.card li b{color:var(--sand, #ece7db)}
+.card code{
+  padding:1px 5px; border-radius:4px; font-size:12px;
+  background:rgba(255,255,255,.07);
+}
+.tip{
+  margin:11px 0 0; padding-top:10px; font-size:12.5px; line-height:1.55;
+  border-top:1px solid rgba(201,184,150,.14);
+  color:rgba(236,231,219,.5);
+}
+
+.install-foot{display:flex; justify-content:center; margin-top:6px}
+.install-foot .btn{width:auto; padding:11px 22px}
+
+@media (max-width: 520px){
+  .install-top{flex-direction:column; gap:12px}
+  .install-top h1{font-size:22px}
+}

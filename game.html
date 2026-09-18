@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Застава</title>
 
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1113">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Застава">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap&subset=cyrillic,latin" rel="stylesheet">
@@ -73,13 +82,21 @@
   <div id="pauseBox">
     <button class="btn btn-main" id="resumeBtn" type="button">Продолжить</button>
 
+    <div class="room-line" id="roomLine">
+      <span>Код комнаты</span>
+      <b id="roomCode">—</b>
+      <button class="link" id="copyCodeBtn" type="button">скопировать</button>
+    </div>
+
     <label class="volume">
       <span>Громкость</span>
       <input id="volume" type="range" min="0" max="100" step="1">
       <b id="volumeValue">70</b>
     </label>
 
+    <button class="btn btn-ghost pause-wide" id="editTouchBtn" type="button">Настроить кнопки</button>
     <button class="btn btn-ghost" id="leaveBtn" type="button">Выйти в лобби</button>
+    <button class="btn btn-danger" id="closeRoomBtn" type="button">Закрыть комнату</button>
   </div>
 
   <em>W A S D — движение · ПКМ — прицел · R — перезарядка · 1 2 — оружие · Tab — табло · Enter — чат · Esc — пауза</em>

@@ -7,16 +7,32 @@
 // игрок сможет писать и в чужого бойца, и в чужой счёт. Поэтому разрешения тут
 // выданы как можно глубже: каждому своё поддерево.
 //
-// Комнату целиком удаляет только тот, кто её создал: ключ его сессии лежит в
-// meta/hostSession и сверяется с auth.uid. Иначе любой мог бы снести чужой матч
-// одной строкой из консоли браузера.
+// Кто может снести комнату. Раньше — только её создатель. Это давало вечный
+// мусор: хозяин уходил, комната оставалась в списке навсегда, потому что
+// убрать её было уже некому. Теперь снести комнату может либо создатель (ключ
+// его сессии лежит в meta/hostSession), либо ЛЮБОЙ вошедший — но только если в
+// комнате не осталось ни одного игрока. Запись в roomIndex устроена так же:
+// чужую карточку можно стереть лишь тогда, когда самой комнаты уже нет.
+//
+// Лимит игроков проверяется тут же, а не только в интерфейсе: data.parent()
+// на уровне игрока — это вся ветка players, и её numChildren() даёт текущее
+// число вошедших. Без этой проверки в «комнату на двоих» вошло бы сколько
+// угодно человек, стоило открыть консоль браузера.
 {
   "rules": {
     "roomIndex": {
       ".read": "auth != null",
       "$room": {
-        ".write": "auth != null && (!data.exists() || !newData.exists() || data.child('hostSession').val() === auth.uid)",
-        ".validate": "!newData.exists() || newData.hasChildren(['map', 'mode', 'host', 'hostSession'])"
+        ".write": "auth != null && (!data.exists() || data.child('hostSession').val() === auth.uid || (!newData.exists() && !root.child('rooms').child($room).exists()))",
+        ".validate": "!newData.exists() || newData.hasChildren(['map', 'mode', 'host', 'hostSession'])",
+
+        // Пульс и счётчик игроков обновляет любой, кто сидит в комнате:
+        // так комната не пропадает из списка, когда хозяин закрыл вкладку.
+        "beat":  { ".write": "auth != null", ".validate": "newData.isNumber()" },
+        "count": { ".write": "auth != null", ".validate": "newData.isNumber() && newData.val() >= 0" },
+
+        "maxPlayers": { ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 16" },
+        "priv":       { ".validate": "newData.isBoolean()" }
       }
     },
 
@@ -24,18 +40,20 @@
       "$room": {
         ".read": "auth != null",
 
-        // снести комнату целиком может только её создатель
-        ".write": "auth != null && data.exists() && !newData.exists() && data.child('meta/hostSession').val() === auth.uid",
+        // снести комнату может создатель — или кто угодно, если она уже пуста
+        ".write": "auth != null && data.exists() && !newData.exists() && (data.child('meta/hostSession').val() === auth.uid || !data.child('players').exists())",
 
         "meta": {
           ".write": "auth != null && (!data.exists() || data.child('hostSession').val() === auth.uid)",
-          ".validate": "newData.hasChildren(['map', 'mode'])"
+          ".validate": "newData.hasChildren(['map', 'mode'])",
+          "maxPlayers": { ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 16" },
+          "priv":       { ".validate": "newData.isBoolean()" }
         },
 
         "players": {
           "$session": {
-            // каждый пишет только в своего бойца
-            ".write": "auth != null && auth.uid === $session",
+            // каждый пишет только в своего бойца — и только если есть место
+            ".write": "auth != null && auth.uid === $session && (data.exists() || !newData.exists() || data.parent().numChildren() < (root.child('rooms').child($room).child('meta').child('maxPlayers').exists() ? root.child('rooms').child($room).child('meta').child('maxPlayers').val() : 16))",
             ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'name']) && newData.child('name').val().length <= 40)",
             "hp":     { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
             "kills":  { ".validate": "newData.isNumber() && newData.val() >= 0" },
@@ -43,7 +61,9 @@
             "x":   { ".validate": "newData.isNumber()" },
             "y":   { ".validate": "newData.isNumber()" },
             "z":   { ".validate": "newData.isNumber()" },
-            "yaw": { ".validate": "newData.isNumber()" }
+            "yaw": { ".validate": "newData.isNumber()" },
+            "pitch": { ".validate": "newData.isNumber()" },
+            "w": { ".validate": "newData.isString() && newData.val().length <= 12" }
           }
         },
 

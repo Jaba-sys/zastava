@@ -16,9 +16,40 @@
 //
 // Стрельба висит на отдельной кнопке, а не на касании правой половины: иначе
 // невозможно просто осмотреться, не открыв огонь.
+//
+// ---- про то, что кнопки двигаются ------------------------------------------
+//
+// Раскладка «из коробки» не может подойти всем: у людей разные телефоны и
+// разные руки, и то, что удобно на шестидюймовом экране с большим пальцем
+// правой руки, неудобно на планшете двумя руками. Поэтому кнопки не прибиты
+// сеткой, а лежат каждая на своих координатах, и эти координаты человек может
+// поменять прямо в матче: «Настроить кнопки» в паузе, перетащил, растянул
+// ползунком, «Готово».
+//
+// Координаты хранятся ДОЛЯМИ экрана, а не пикселями. Это важно: телефон
+// поворачивают, окно меняет размер, и раскладка в пикселях после поворота
+// уехала бы за край. В долях она просто растягивается вместе с экраном.
+// Лежит всё в localStorage — на этом устройстве, без всякой сети.
 
 const STICK_RADIUS = 58;      // на сколько пикселей от центра стик доходит до упора
 const LOOK_SPEED = 0.0055;    // чувствительность обзора пальцем
+const LAYOUT_KEY = "zastava.touchLayout";
+
+/**
+ * Раскладка по умолчанию: смещения ЦЕНТРА кнопки от угла экрана в пикселях и
+ * базовый размер. Пиксели тут только чтобы один раз посчитать доли на текущем
+ * экране — дальше живут доли.
+ */
+const DEFAULTS = {
+  fire:   { corner: "br", dx:  60, dy:  60, size: 88, label: "Огонь" },
+  jump:   { corner: "br", dx: 150, dy:  52, size: 68, label: "Прыжок" },
+  crouch: { corner: "br", dx: 228, dy:  52, size: 68, label: "Присесть" },
+  aim:    { corner: "br", dx:  60, dy: 150, size: 68, label: "Прицел" },
+  swap:   { corner: "br", dx: 150, dy: 150, size: 68, label: "Ствол" },
+  reload: { corner: "br", dx: 228, dy: 150, size: 68, label: "Заряд" },
+  pause:  { corner: "tl", dx:  38, dy:  38, size: 44, label: "Пауза" }
+};
+const ORDER = ["fire", "jump", "crouch", "aim", "swap", "reload", "pause"];
 
 export function isTouchDevice(){
   return (navigator.maxTouchPoints || 0) > 0
@@ -26,10 +57,40 @@ export function isTouchDevice(){
     || "ontouchstart" in window;
 }
 
+/** Доли экрана для кнопки по умолчанию — считаются от текущего размера окна. */
+function defaultSpot(act){
+  const d = DEFAULTS[act];
+  const W = Math.max(320, innerWidth), H = Math.max(320, innerHeight);
+  const x = d.corner === "br" ? (W - d.dx) / W : d.dx / W;
+  const y = d.corner === "br" ? (H - d.dy) / H : d.dy / H;
+  return { x: clamp01(x), y: clamp01(y), s: 1 };
+}
+
+const clamp01 = v => Math.max(0.05, Math.min(0.95, v));
+
+function loadLayout(){
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
+    const out = {};
+    for (const act of ORDER){
+      const s = saved[act];
+      out[act] = (s && typeof s.x === "number" && typeof s.y === "number")
+        ? { x: clamp01(s.x), y: clamp01(s.y), s: Math.max(0.6, Math.min(1.9, s.s || 1)) }
+        : defaultSpot(act);
+    }
+    return out;
+  } catch {
+    // Приватный режим, запрещённое хранилище — не повод остаться без кнопок.
+    const out = {};
+    for (const act of ORDER) out[act] = defaultSpot(act);
+    return out;
+  }
+}
+
 export class TouchControls {
   /**
    * @param controls - тот же Controls, что у клавиатуры
-   * @param hooks - { onReload, onSwap, onPause }
+   * @param hooks - { onReload, onSwap, onPause, onEditDone }
    */
   constructor(controls, hooks = {}){
     this.controls = controls;
@@ -37,11 +98,16 @@ export class TouchControls {
     this.moveTouch = null;     // id пальца на стике
     this.lookTouch = null;     // id пальца обзора
     this.lookLast = { x: 0, y: 0 };
+    this.layout = loadLayout();
+    this.editing = false;
+    this.picked = "fire";
 
     this._buildDom();
+    this._applyLayout();
     this._bind();
 
     document.body.classList.add("touch");
+    addEventListener("resize", () => this._applyLayout());
   }
 
   _buildDom(){
@@ -50,31 +116,80 @@ export class TouchControls {
     root.innerHTML = `
       <div id="stick"><i></i></div>
       <div id="touchButtons">
-        <button class="tbtn tbtn-aim"    data-act="aim"    type="button">Прицел</button>
-        <button class="tbtn tbtn-fire"   data-act="fire"   type="button">Огонь</button>
-        <button class="tbtn tbtn-jump"   data-act="jump"   type="button">Прыжок</button>
-        <button class="tbtn tbtn-crouch" data-act="crouch" type="button">Присесть</button>
-        <button class="tbtn tbtn-reload" data-act="reload" type="button">Заряд</button>
-        <button class="tbtn tbtn-swap"   data-act="swap"   type="button">Ствол</button>
+        <button class="tbtn" data-act="aim"    type="button">Прицел</button>
+        <button class="tbtn tbtn-fire" data-act="fire" type="button">Огонь</button>
+        <button class="tbtn" data-act="jump"   type="button">Прыжок</button>
+        <button class="tbtn" data-act="crouch" type="button">Присесть</button>
+        <button class="tbtn" data-act="reload" type="button">Заряд</button>
+        <button class="tbtn" data-act="swap"   type="button">Ствол</button>
+        <button class="tbtn tbtn-pause" data-act="pause" type="button">II</button>
       </div>
-      <button class="tbtn tbtn-pause" id="touchPause" type="button">II</button>`;
+
+      <div id="touchEdit">
+        <div class="edit-head">
+          <div>
+            <b>Настройка кнопок</b>
+            <i>Перетащи кнопку пальцем. Ползунок меняет размер выбранной.</i>
+          </div>
+          <button class="edit-flip" id="editFlip" type="button" title="Переставить окно">⇅</button>
+        </div>
+        <div class="edit-pick" id="editPick"></div>
+        <label class="edit-size">
+          <span>Размер</span>
+          <input id="editSize" type="range" min="60" max="190" step="5">
+          <b id="editSizeValue">100%</b>
+        </label>
+        <div class="edit-actions">
+          <button class="btn btn-ghost" id="editReset" type="button">Сбросить всё</button>
+          <button class="btn btn-main" id="editDone" type="button">Готово</button>
+        </div>
+      </div>`;
     document.body.append(root);
 
     this.root = root;
     this.stick = root.querySelector("#stick");
     this.knob = this.stick.querySelector("i");
+    this.buttons = {};
+    for (const button of root.querySelectorAll(".tbtn[data-act]")){
+      this.buttons[button.dataset.act] = button;
+    }
+    this.panel = root.querySelector("#touchEdit");
+  }
+
+  /** Развесить кнопки по сохранённым долям экрана. */
+  _applyLayout(){
+    for (const act of ORDER){
+      const button = this.buttons[act];
+      if (!button) continue;
+      const spot = this.layout[act];
+      const size = Math.round(DEFAULTS[act].size * spot.s);
+      button.style.left = (spot.x * 100) + "%";
+      button.style.top  = (spot.y * 100) + "%";
+      button.style.width = size + "px";
+      button.style.height = size + "px";
+      button.style.fontSize = Math.max(9, Math.round(size * 0.165)) + "px";
+    }
+  }
+
+  _save(){
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(this.layout)); }
+    catch { /* хранилище может быть запрещено — тогда настройка живёт до выхода */ }
   }
 
   _bind(){
     const c = this.controls;
 
     // ---- кнопки -----------------------------------------------------------
-    for (const button of this.root.querySelectorAll(".tbtn[data-act]")){
-      const act = button.dataset.act;
+    for (const act of ORDER){
+      const button = this.buttons[act];
 
       const press = event => {
+        // В режиме настройки кнопка не стреляет, а таскается. Иначе человек,
+        // двигая «Огонь», расстреливал бы полмагазина.
+        if (this.editing){ this._grab(event, act); return; }
         event.preventDefault();
         event.stopPropagation();
+        if (act === "pause"){ this.hooks.onPause?.(); return; }
         button.classList.add("down");
         if (act === "fire")   c.firing = true;
         if (act === "jump")   c.keys.jump = true;
@@ -84,6 +199,7 @@ export class TouchControls {
         if (act === "swap")   this.hooks.onSwap?.();
       };
       const release = event => {
+        if (this.editing) return;
         event.preventDefault();
         button.classList.remove("down");
         if (act === "fire") c.firing = false;
@@ -98,8 +214,28 @@ export class TouchControls {
       button.addEventListener("mouseup", release);
     }
 
-    this.root.querySelector("#touchPause")
-      .addEventListener("click", () => this.hooks.onPause?.());
+    // ---- панель настройки --------------------------------------------------
+    this.sizeInput = this.root.querySelector("#editSize");
+    this.sizeValue = this.root.querySelector("#editSizeValue");
+    this.sizeInput.addEventListener("input", () => {
+      const spot = this.layout[this.picked];
+      spot.s = Number(this.sizeInput.value) / 100;
+      this.sizeValue.textContent = this.sizeInput.value + "%";
+      this._applyLayout();
+      this._save();
+    });
+    this.root.querySelector("#editReset").addEventListener("click", () => {
+      for (const act of ORDER) this.layout[act] = defaultSpot(act);
+      this._applyLayout();
+      this._save();
+      this._pick(this.picked);
+    });
+    this.root.querySelector("#editDone").addEventListener("click", () => this.endEdit());
+    // Окно настройки само закрывает часть экрана, а двигать надо в том числе
+    // кнопки под ним. Поэтому его можно перекинуть вниз и обратно.
+    this.root.querySelector("#editFlip").addEventListener("click", () => {
+      this.panel.classList.toggle("low");
+    });
 
     // ---- стик и обзор -----------------------------------------------------
     // Слушаем на всём документе, а не на канвасе: палец легко соскальзывает за
@@ -123,11 +259,96 @@ export class TouchControls {
     button.classList.remove("down");
   }
 
+  // -------------------------------------------------------------------------
+  // Режим настройки
+  // -------------------------------------------------------------------------
+
+  startEdit(){
+    this.editing = true;
+    this.controls.firing = false;
+    this.root.classList.remove("hidden");
+    this.root.classList.add("editing");
+    this._renderPicker();
+    this._pick(this.picked);
+  }
+
+  endEdit(){
+    this.editing = false;
+    this.root.classList.remove("editing");
+    this._save();
+    this.hooks.onEditDone?.();
+  }
+
+  _renderPicker(){
+    const box = this.root.querySelector("#editPick");
+    box.innerHTML = "";
+    for (const act of ORDER){
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "edit-chip";
+      chip.dataset.act = act;
+      chip.textContent = DEFAULTS[act].label;
+      chip.onclick = () => this._pick(act);
+      box.append(chip);
+    }
+  }
+
+  _pick(act){
+    this.picked = act;
+    for (const chip of this.root.querySelectorAll(".edit-chip")){
+      chip.classList.toggle("on", chip.dataset.act === act);
+    }
+    for (const other of ORDER) this.buttons[other].classList.toggle("picked", other === act);
+    const pct = Math.round(this.layout[act].s * 100);
+    this.sizeInput.value = pct;
+    this.sizeValue.textContent = pct + "%";
+  }
+
+  /**
+   * Взять кнопку пальцем и таскать.
+   *
+   * Слушатели вешаются на документ, а не на саму кнопку: кнопка едет за
+   * пальцем, палец легко оказывается за её краем, и жест на самой кнопке
+   * оборвался бы на первом же быстром движении.
+   */
+  _grab(event, act){
+    event.preventDefault();
+    event.stopPropagation();
+    this._pick(act);
+
+    const point = e => (e.touches?.[0] || e.changedTouches?.[0] || e);
+    const move = e => {
+      const p = point(e);
+      if (p.clientX === undefined) return;
+      e.preventDefault();
+      this.layout[act].x = clamp01(p.clientX / innerWidth);
+      this.layout[act].y = clamp01(p.clientY / innerHeight);
+      this._applyLayout();
+    };
+    const up = () => {
+      document.removeEventListener("touchmove", move);
+      document.removeEventListener("touchend", up);
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      this._save();
+    };
+    document.addEventListener("touchmove", move, { passive: false });
+    document.addEventListener("touchend", up);
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  }
+
+  // -------------------------------------------------------------------------
+  // Стик и обзор
+  // -------------------------------------------------------------------------
+
   _isUi(target){
-    return !!target.closest?.("#touchButtons, #touchPause, #start, #finish, #loading, #chat, #board");
+    return !!target.closest?.(
+      "#touchButtons, #touchEdit, #start, #finish, #loading, #chat, #board");
   }
 
   _start(event){
+    if (this.editing) return;
     for (const t of event.changedTouches){
       if (this._isUi(t.target)) continue;
       event.preventDefault();
@@ -147,6 +368,7 @@ export class TouchControls {
   }
 
   _move(event){
+    if (this.editing) return;
     const c = this.controls;
     for (const t of event.changedTouches){
       if (t.identifier === this.moveTouch){
@@ -199,6 +421,7 @@ export class TouchControls {
 
   /** Спрятать кнопки на паузе и на итоговом экране. */
   setVisible(on){
+    if (this.editing) return;          // в настройке они нужны видимыми
     this.root.classList.toggle("hidden", !on);
   }
 }

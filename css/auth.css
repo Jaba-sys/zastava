@@ -39,9 +39,11 @@
   margin-top:14px; max-width:34ch;
 }
 
-.maps{display:flex; gap:14px; flex-wrap:wrap}
+/* Карт стало четыре — сеткой два на два они читаются как набор, а гибкой
+   строкой ложились «три и один», что выглядит как недоделка. */
+.maps{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; max-width:340px}
+@media (max-width: 460px){ .maps{grid-template-columns:1fr; max-width:none} }
 .map{
-  width:150px;
   background:var(--concrete-2);
   border:1px solid var(--line);
   border-radius:var(--r);
@@ -95,3 +97,9 @@
 .setup.show{display:block}
 .setup code{font-family:ui-monospace,monospace; background:rgba(0,0,0,.3); padding:1px 5px; border-radius:2px}
 @media (max-width:860px){ .setup{margin:0 22px 30px} }
+
+/* Кнопка установки на экране входа: появляется только там, где браузер
+   действительно даёт установить (см. js/pwa.js), поэтому места под неё
+   заранее не резервируем. */
+.install-btn{margin-top:14px}
+.install-btn[hidden]{display:none}
