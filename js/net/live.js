@@ -59,11 +59,26 @@ export function watchRooms(callback){
   });
 }
 
+/**
+ * Сколько детей у снимка.
+ *
+ * Считаем по val(), а не методом снимка, и вот почему: в старой, «неймспейсной»
+ * библиотеке Firebase у DataSnapshot был numChildren(), а в модульной (той, что
+ * здесь, v9+) его убрали — осталось свойство size. Вызов numChildren() в ней
+ * падает на ровном месте: "snap.numChildren is not a function". Подсчёт по
+ * объекту не зависит от того, какую версию подсунут, и лишнего запроса не
+ * стоит — узел уже загружен.
+ */
+function countOf(snap){
+  const value = snap?.val?.();
+  return value && typeof value === "object" ? Object.keys(value).length : 0;
+}
+
 /** Тихо убрать комнату, в которой никого не осталось. Ошибки прав — не беда. */
 export async function sweepRoom(roomId){
   try {
     const players = await get(ref(rtdb, `rooms/${roomId}/players`));
-    if (players.exists() && players.numChildren() > 0) return false;
+    if (countOf(players) > 0) return false;
     await remove(ref(rtdb, `rooms/${roomId}`)).catch(() => {});
     await remove(ref(rtdb, `roomIndex/${roomId}`)).catch(() => {});
     return true;
@@ -131,8 +146,7 @@ export function roomHeartbeat(roomId, playersCount){
 
 /** Сколько человек сейчас в комнате. */
 export async function countPlayers(roomId){
-  const snap = await get(ref(rtdb, `rooms/${roomId}/players`));
-  return snap.exists() ? snap.numChildren() : 0;
+  return countOf(await get(ref(rtdb, `rooms/${roomId}/players`)));
 }
 
 /** Есть ли куда войти: код есть, комната есть, места остались. */
