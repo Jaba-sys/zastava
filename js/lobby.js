@@ -2,7 +2,10 @@
 
 import { isConfigured, hasRealtimeDb } from "./firebase.js";
 import { resolvePlayer, forgetPlayer } from "./mypeal-auth.js";
-import { ensurePlayer, buyWeapon, setLoadout } from "./profile.js";
+import {
+  ensurePlayer, buyWeapon, setLoadout, setNick, findPlayers, displayName, NICK_MAX
+} from "./profile.js";
+import * as friends from "./friends.js";
 import { MAP_LIST } from "./game/maps/index.js";
 import { WEAPONS, WEAPON_ORDER, LOADOUT_SLOTS } from "./game/weapons.js";
 import { MAX_PLAYERS, MYPEAL_ORIGIN } from "./config.js";
@@ -21,6 +24,14 @@ const SIZES = [2, 4, 6, 8, 12, 16];
 let chosenSize = SIZES.includes(MAX_PLAYERS) ? MAX_PLAYERS : 4;
 let chosenPrivate = false;
 
+// Друзья и присутствие живут подписками: и то и другое меняется само собой,
+// пока человек смотрит на лобби.
+let friendIds = [];
+let friendCards = new Map();
+let presence = [];
+let requests = [];
+let stopAnnounce = null;
+
 registerServiceWorker();
 wireInstallButton(document.getElementById("installBtn"));
 
@@ -35,8 +46,9 @@ async function boot(){
   const profile = await ensurePlayer(resolved.uid, resolved.fresh || {});
   me = { ...resolved, ...profile };
 
-  $("who").textContent = profile.name;
+  $("who").textContent = displayName(profile);
   $("tag").textContent = profile.tag ? "@" + profile.tag : "";
+  $("nickInput").value = displayName(profile);
   $("sPoints").textContent = profile.points ?? 0;
   $("sKills").textContent  = profile.kills ?? 0;
   $("sMatches").textContent = profile.matches ?? 0;
@@ -55,6 +67,21 @@ async function boot(){
   }
 
   net.watchRooms(renderRooms);
+
+  // Объявляем о себе: «в лобби». Без комнаты — значит, свободен и его можно
+  // позвать; друзья увидят это у себя в списке.
+  stopAnnounce = await net.announce(me.sessionUid, {
+    uid: me.uid, nick: displayName(me), tag: me.tag || null, room: null
+  });
+  addEventListener("pagehide", () => stopAnnounce?.());
+
+  net.watchPresence(rows => { presence = rows; renderFriends(); renderMainServer(); });
+  friends.watchFriends(me.uid, async ids => {
+    friendIds = ids;
+    friendCards = await friends.loadCards(ids);
+    renderFriends();
+  });
+  friends.watchRequests(me.uid, rows => { requests = rows; renderRequests(); });
 }
 
 const ratio = (k = 0, d = 0) => (d === 0 ? (k || 0).toFixed(2) : (k / d).toFixed(2));
@@ -102,6 +129,12 @@ function renderSizes(){
 }
 
 function wire(){
+  $("mainServerBtn").onclick = enterMainServer;
+  $("nickBtn").onclick = changeNick;
+  $("nickInput").addEventListener("keydown", e => { if (e.key === "Enter") changeNick(); });
+  $("findBtn").onclick = searchPeople;
+  $("findInput").addEventListener("keydown", e => { if (e.key === "Enter") searchPeople(); });
+
   $("privInput").onchange = e => { chosenPrivate = e.target.checked; };
 
   for (const button of document.querySelectorAll("[data-mode]")){
@@ -238,6 +271,224 @@ async function toggleSlot(id){
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Позывной
+// ---------------------------------------------------------------------------
+
+function nickSay(text, kind = "err"){
+  const note = $("nickNote");
+  note.textContent = text;
+  note.className = "note show " + kind;
+  clearTimeout(nickSay._timer);
+  nickSay._timer = setTimeout(() => { note.className = "note"; }, 4000);
+}
+
+async function changeNick(){
+  const wanted = $("nickInput").value;
+  $("nickBtn").disabled = true;
+  try {
+    const result = await setNick(me.uid, me, wanted);
+    if (!result.ok){ playDenied(); return nickSay(result.reason); }
+    me = { ...me, ...result.player };
+    $("who").textContent = displayName(me);
+    $("nickInput").value = displayName(me);
+    // Присутствие пишется отдельно от карточки: список друзей должен показать
+    // новый позывной сразу, а не когда человек в следующий раз зайдёт.
+    net.updateAnnounce(me.sessionUid, { nick: displayName(me) });
+    playClick();
+    nickSay("Теперь ты " + displayName(me) + ".", "ok");
+    renderFriends();
+  } catch (error){
+    playDenied();
+    nickSay("Не получилось сменить: " + error.message);
+  } finally {
+    $("nickBtn").disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Друзья
+// ---------------------------------------------------------------------------
+
+function friendSay(text, kind = "err"){
+  const note = $("friendNote");
+  note.textContent = text;
+  note.className = "note show " + kind;
+  clearTimeout(friendSay._timer);
+  friendSay._timer = setTimeout(() => { note.className = "note"; }, 5000);
+}
+
+/** Где человек сейчас — по записям присутствия, самой свежей из его вкладок. */
+function whereIs(uid){
+  let best = null;
+  for (const row of presence){
+    if (row.uid !== uid) continue;
+    if (!best || (row.at || 0) > (best.at || 0)) best = row;
+  }
+  return best;
+}
+
+function mapName(id){
+  return MAP_LIST.find(m => m.id === id)?.name || id || "";
+}
+
+async function searchPeople(){
+  const text = $("findInput").value;
+  if (String(text).trim().replace(/^@/, "").length < 2){
+    return friendSay("Введи хотя бы два символа — тег @ или ник целиком.");
+  }
+  $("findBtn").disabled = true;
+  $("findResult").innerHTML = `<p class="empty">Ищем…</p>`;
+  try {
+    const found = (await findPlayers(text)).filter(p => p.uid !== me.uid);
+    if (!found.length){
+      $("findResult").innerHTML =
+        `<p class="empty">Никого. Ник и тег ищутся целиком, не по кусочку.</p>`;
+      return;
+    }
+    $("findResult").innerHTML = "";
+    for (const person of found) $("findResult").append(personRow(person, "find"));
+  } catch (error){
+    friendSay("Поиск не получился: " + error.message);
+    $("findResult").innerHTML = "";
+  } finally {
+    $("findBtn").disabled = false;
+  }
+}
+
+/**
+ * Строчка человека. Одна и та же для находки, заявки и друга — меняется только
+ * набор кнопок справа: так список читается как один список, а не три разных.
+ */
+function personRow(person, kind){
+  const row = document.createElement("div");
+  row.className = "person";
+
+  const at = whereIs(person.uid);
+  const online = !!at;
+  const place = !at ? "не в игре"
+    : at.room ? `${mapName(at.map)} · ${at.mode === "team" ? "команда" : "каждый сам"}`
+    : "в лобби";
+
+  row.innerHTML = `
+    <span class="dot${online ? " on" : ""}"></span>
+    <div class="person-who">
+      <b>${escape(displayName(person))}</b>
+      <i>${person.tag ? "@" + escape(person.tag) : ""}${person.tag && kind !== "find" ? " · " : ""}${kind === "find" ? "" : escape(place)}</i>
+    </div>
+    <div class="person-act"></div>`;
+
+  const act = row.querySelector(".person-act");
+  const button = (text, cls, onclick) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn btn-ghost tiny " + (cls || "");
+    b.textContent = text;
+    b.onclick = onclick;
+    act.append(b);
+    return b;
+  };
+
+  if (kind === "find"){
+    if (friendIds.includes(person.uid)) act.innerHTML = `<span class="price owned-mark">уже друг</span>`;
+    else button("Позвать", "", async () => {
+      try {
+        const result = await friends.invite({ ...me, nick: displayName(me) }, person);
+        if (!result.ok) return friendSay(result.reason);
+        playClick();
+        friendSay(result.becameFriends
+          ? `Вы уже звали друг друга — теперь друзья.`
+          : `Позвал ${displayName(person)}. Ждём согласия.`, "ok");
+        $("findResult").innerHTML = "";
+        $("findInput").value = "";
+      } catch (error){
+        playDenied();
+        friendSay("Не получилось позвать: " + error.message);
+      }
+    });
+  }
+
+  if (kind === "request"){
+    button("Принять", "accept", async () => {
+      await friends.accept(me, person.request).catch(() => {});
+      playClick();
+    });
+    button("Отказать", "", async () => {
+      await friends.dropRequest(me.uid, person.uid);
+    });
+  }
+
+  if (kind === "friend"){
+    // Зайти можно и в закрытую комнату: в этом и смысл дружбы.
+    if (at?.room) button("Зайти", "go", () => enterRoom(at.room));
+    button("Убрать", "", async () => {
+      await friends.unfriend(me.uid, person.uid);
+      playClick();
+    });
+  }
+
+  return row;
+}
+
+function renderRequests(){
+  const box = $("requests");
+  $("requestsBox").hidden = requests.length === 0;
+  box.innerHTML = "";
+  for (const request of requests){
+    box.append(personRow(
+      { uid: request.from, nick: request.nick, tag: request.tag, request },
+      "request"
+    ));
+  }
+}
+
+function renderFriends(){
+  const box = $("friends");
+  if (!friendIds.length){
+    box.innerHTML = `<p class="empty">Друзей пока нет. Найди по тегу @ — он тот же, что в мессенджере.</p>`;
+    return;
+  }
+
+  // Сначала те, кто в игре: список нужен, чтобы к кому-то пойти, а не чтобы
+  // любоваться на список.
+  const rows = friendIds
+    .map(uid => friendCards.get(uid) || { uid, nick: "Боец" })
+    .sort((a, b) => {
+      const pa = whereIs(a.uid), pb = whereIs(b.uid);
+      const wa = pa ? (pa.room ? 2 : 1) : 0;
+      const wb = pb ? (pb.room ? 2 : 1) : 0;
+      if (wa !== wb) return wb - wa;
+      return displayName(a).localeCompare(displayName(b));
+    });
+
+  box.innerHTML = "";
+  for (const person of rows) box.append(personRow(person, "friend"));
+}
+
+// ---------------------------------------------------------------------------
+// Общий сервер
+// ---------------------------------------------------------------------------
+
+function renderMainServer(){
+  const here = presence.filter(row => row.room === net.MAIN_ROOM).length;
+  $("mainServerSeats").textContent = `${here} / ${net.MAIN.maxPlayers}`;
+  $("mainServerLine").textContent =
+    `Команда на команду · раунд до ${net.MAIN.killsToWin} убийств `
+    + `· каждые ${net.MAIN.mapsPerCycle} раундов новая карта`;
+}
+
+async function enterMainServer(){
+  $("mainServerBtn").disabled = true;
+  try {
+    await net.ensureMainRoom();
+    location.href = `game.html?room=${net.MAIN_ROOM}`;
+  } catch (error){
+    say("Не получилось зайти на общий: " + error.message);
+    $("mainServerBtn").disabled = false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Комнаты
 // ---------------------------------------------------------------------------
@@ -298,8 +549,11 @@ async function enterRoom(id){
 
 function renderRooms(rooms){
   const list = $("rooms");
-  // Закрытые комнаты в списке не показываем — в этом и весь их смысл.
-  const open = rooms.filter(r => r.state !== net.ROOM_STATE.OVER && !r.priv);
+  // Закрытые комнаты в списке не показываем — в этом и весь их смысл. Общий
+  // сервер тоже: у него своя кнопка выше, и дублировать его строчкой в общем
+  // списке значит показать одно и то же дважды.
+  const open = rooms.filter(r =>
+    r.state !== net.ROOM_STATE.OVER && !r.priv && r.id !== net.MAIN_ROOM);
 
   if (!open.length){
     list.innerHTML = `<p class="empty">Открытых комнат нет. Создай свою — код можно продиктовать или отправить ссылкой.</p>`;

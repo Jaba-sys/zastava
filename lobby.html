@@ -102,6 +102,14 @@
     </section>
 
     <section class="panel">
+      <h2>Общий сервер</h2>
+      <button class="main-server" id="mainServerBtn" type="button">
+        <span class="ms-flag">24/7</span>
+        <b>Застава — общий</b>
+        <i id="mainServerLine">Команда на команду, круглосуточно</i>
+        <u id="mainServerSeats">—</u>
+      </button>
+
       <h2>Зайти к своим</h2>
       <div class="join-row">
         <input id="codeInput" maxlength="5" placeholder="Код комнаты" autocomplete="off" spellcheck="false">
@@ -111,6 +119,36 @@
       <h2>Открытые комнаты</h2>
       <div class="rooms" id="rooms">
         <p class="empty">Смотрим, кто играет…</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Позывной</h2>
+      <div class="join-row">
+        <input id="nickInput" maxlength="18" placeholder="Как тебя звать в бою" autocomplete="off" spellcheck="false">
+        <button class="btn btn-ghost" id="nickBtn" type="button">Сменить</button>
+      </div>
+      <p class="armory-hint">
+        Так тебя видят над головой и в табло. Имя и тег в мессенджере остаются
+        прежними — в переписке ты по-прежнему ты.
+      </p>
+      <div class="note" id="nickNote"></div>
+
+      <h2>Друзья</h2>
+      <div class="join-row">
+        <input id="findInput" maxlength="24" placeholder="@тег или ник" autocomplete="off" spellcheck="false">
+        <button class="btn btn-ghost" id="findBtn" type="button">Найти</button>
+      </div>
+      <div class="note" id="friendNote"></div>
+      <div class="people" id="findResult"></div>
+
+      <div id="requestsBox" hidden>
+        <h3 class="sub">Зовут в друзья</h3>
+        <div class="people" id="requests"></div>
+      </div>
+
+      <div class="people" id="friends">
+        <p class="empty">Друзей пока нет. Найди по тегу @ — он тот же, что в мессенджере.</p>
       </div>
     </section>
 

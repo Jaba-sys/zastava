@@ -14,16 +14,22 @@
 // комнате не осталось ни одного игрока. Запись в roomIndex устроена так же:
 // чужую карточку можно стереть лишь тогда, когда самой комнаты уже нет.
 //
-// Лимит игроков проверяется тут же, а не только в интерфейсе: data.parent()
-// на уровне игрока — это вся ветка players, и её numChildren() даёт текущее
-// число вошедших. Без этой проверки в «комнату на двоих» вошло бы сколько
-// угодно человек, стоило открыть консоль браузера.
+// Чего здесь НЕТ и почему: лимита игроков. Язык правил Realtime Database не
+// умеет считать детей узла — numChildren() есть у снимка в клиентской
+// библиотеке, но не у RuleDataSnapshot в правилах, и попытка его вызвать
+// отвергается редактором ("No such method/property 'numChildren'"). Обойти это
+// можно только счётчиком, который ведут сами клиенты, — то есть той же защитой
+// на доверии, но с видом настоящей. Поэтому число игроков проверяется в лобби
+// и на входе в матч, ровно как и урон: см. раздел README «Что здесь честно, а
+// что на доверии».
 {
   "rules": {
     "roomIndex": {
       ".read": "auth != null",
       "$room": {
-        ".write": "auth != null && (!data.exists() || data.child('hostSession').val() === auth.uid || (!newData.exists() && !root.child('rooms').child($room).exists()))",
+        // Карточку постоянного сервера не стирает никто: его ведут по очереди
+        // все, кто в нём есть, и «хозяина» у него нет вовсе.
+        ".write": "auth != null && ((data.exists() && data.child('permanent').val() === true && newData.exists()) || !data.exists() || data.child('hostSession').val() === auth.uid || (!newData.exists() && !root.child('rooms').child($room).exists()))",
         ".validate": "!newData.exists() || newData.hasChildren(['map', 'mode', 'host', 'hostSession'])",
 
         // Пульс и счётчик игроков обновляет любой, кто сидит в комнате:
@@ -36,24 +42,58 @@
       }
     },
 
+    // Кто сейчас играет и где. Ключ — сессия, а не аккаунт: сверять личность
+    // правила умеют только с auth.uid, а он анонимный. Uid из мессенджера идёт
+    // полем внутри, и на нём ничего, кроме показа в списке, не держится.
+    "presence": {
+      ".read": "auth != null",
+      "$session": {
+        ".write": "auth != null && auth.uid === $session",
+        ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'nick']) && newData.child('nick').val().length <= 24)",
+        "at":   { ".validate": "newData.isNumber()" },
+        "room": { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "map":  { ".validate": "newData.isString() && newData.val().length <= 16" },
+        "mode": { ".validate": "newData.isString() && newData.val().length <= 8" }
+      }
+    },
+
     "rooms": {
       "$room": {
         ".read": "auth != null",
 
-        // снести комнату может создатель — или кто угодно, если она уже пуста
-        ".write": "auth != null && data.exists() && !newData.exists() && (data.child('meta/hostSession').val() === auth.uid || !data.child('players').exists())",
+        // Снести комнату может создатель — или кто угодно, если она уже пуста.
+        // Постоянную не сносит никто и никогда: она на то и постоянная.
+        ".write": "auth != null && data.exists() && !newData.exists() && data.child('meta/permanent').val() !== true && (data.child('meta/hostSession').val() === auth.uid || !data.child('players').exists())",
 
         "meta": {
-          ".write": "auth != null && (!data.exists() || data.child('hostSession').val() === auth.uid)",
+          // У постоянного сервера meta правит любой, кто в нём: раунды крутит
+          // тот, чей ключ сессии меньше всех, а он меняется сам собой, когда
+          // прежний ведущий вышел. Спрашивать разрешения не у кого — своего
+          // сервера у игры нет; это та же честность, что и с уроном.
+          ".write": "auth != null && (!data.exists() || data.child('hostSession').val() === auth.uid || data.child('permanent').val() === true)",
           ".validate": "newData.hasChildren(['map', 'mode'])",
           "maxPlayers": { ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 16" },
-          "priv":       { ".validate": "newData.isBoolean()" }
+          "priv":       { ".validate": "newData.isBoolean()" },
+          "permanent":  { ".validate": "newData.isBoolean()" },
+          "round":      { ".validate": "newData.isNumber() && newData.val() >= 1" },
+          "roundEnds":  { ".validate": "newData.isNumber()" },
+          "scoreA":     { ".validate": "newData.isNumber() && newData.val() >= 0" },
+          "scoreB":     { ".validate": "newData.isNumber() && newData.val() >= 0" }
         },
 
         "players": {
           "$session": {
-            // каждый пишет только в своего бойца — и только если есть место
-            ".write": "auth != null && auth.uid === $session && (data.exists() || !newData.exists() || data.parent().numChildren() < (root.child('rooms').child($room).child('meta').child('maxPlayers').exists() ? root.child('rooms').child($room).child('meta').child('maxPlayers').val() : 16))",
+            // Каждый пишет только в своего бойца.
+            //
+            // Лимита игроков ЗДЕСЬ НЕТ, и это не забывчивость. Язык правил
+            // Realtime Database не умеет считать детей: numChildren() есть у
+            // снимка в клиентской библиотеке, но не у RuleDataSnapshot, а
+            // обойти это можно только счётчиком, который ведут сами клиенты, —
+            // то есть такой же "защитой на доверии", только с видом настоящей.
+            // Поэтому число игроков проверяется в лобби и на входе в матч
+            // (net.roomCapacity), ровно как и урон: см. раздел README
+            // "Что здесь честно, а что на доверии".
+            ".write": "auth != null && auth.uid === $session",
             ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'name']) && newData.child('name').val().length <= 40)",
             "hp":     { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
             "kills":  { ".validate": "newData.isNumber() && newData.val() >= 0" },

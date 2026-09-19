@@ -37,8 +37,9 @@
 
 <script type="module">
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js";
-import { PLAYER, movePlayer, onGround } from "../js/game/physics.js";
+import { PLAYER, movePlayer, onGround, raycast } from "../js/game/physics.js";
 import { buildMap } from "../js/game/maps/index.js";
+import { MAIN, mapForRound, isRoundKeeper } from "../js/net/live.js";
 import { WEAPONS, WEAPON_ORDER, Arsenal, damageAt, LOADOUT_SLOTS } from "../js/game/weapons.js";
 
 const out = document.getElementById("out");
@@ -245,6 +246,97 @@ for (const [id, range, title] of [["karier", 76, "Карьер"], ["depo", 70, "
   });
   line(map.teamSpawns?.a?.length > 0 && map.teamSpawns?.b?.length > 0,
        "у обеих команд есть свои точки", `${map.teamSpawns.a.length} и ${map.teamSpawns.b.length}`);
+}
+
+// ---------------------------------------------------------------------------
+// Имена над головами: видно ли бойца отсюда
+// ---------------------------------------------------------------------------
+//
+// Ровно та проверка, по которой игра решает, гасить ли имя (stepLabels в
+// main.js): луч от глаз к голове чужого бойца. Если он упирается в геометрию
+// раньше — имя прячем. Стекло преградой не считается, и это не оплошность:
+// сквозь стекло человека видно целиком, прятать над ним имя было бы странно.
+
+head("Имена над головами");
+
+/** Видно ли точку B из точки A сквозь геометрию карты. */
+function visible(map, a, b){
+  const from = new THREE.Vector3(...a);
+  const to   = new THREE.Vector3(...b);
+  const dir  = to.clone().sub(from);
+  const dist = dir.length();
+  dir.divideScalar(dist);
+  return !raycast(from, dir, map.colliders, [], dist - 0.3);
+}
+
+const EYE = PLAYER.eye;
+{
+  const depo = buildMap("depo");
+  // Поворотный круг открыт — с одного его края виден другой. Луч ведём по
+  // z = 4, а не через самый центр: ровно в центре стоит мачта фонаря, и через
+  // неё, разумеется, ничего не видно — первая же версия этой проверки на ней
+  // и споткнулась.
+  line(visible(depo, [-10, EYE, 4], [10, EYE, 4]),
+       "на открытом месте бойца видно", "поворотный круг, 20 м");
+  // Ряды вагонов идут по z = ±17 и ±34; между z = -10 и z = -24 стоит вагон.
+  line(!visible(depo, [0, EYE, -10], [0, EYE, -24]),
+       "сквозь вагон бойца НЕ видно", "z от -10 до -24, ряд на -17");
+  // И он же не должен «просвечивать» с большого расстояния вдоль карты.
+  line(!visible(depo, [0, EYE, 6], [0, EYE, 40]),
+       "сквозь два ряда вагонов тоже не видно", "z от 6 до 40");
+}
+{
+  const tep = buildMap("teplitsy");
+  // Теплица на (-40, -30) размером 34 x 22: стеклянные боковины на z = -41 и
+  // -19. Ведём луч по x = -38, а не по -40: на -40 приходится стойка рамы, она
+  // непрозрачная и луч честно ловит именно её.
+  line(visible(tep, [-38, EYE, -46], [-38, EYE, -30]),
+       "сквозь стекло теплицы бойца видно", "стекло не преграда для луча");
+  // Котельная в центре кирпичная и глухая — сквозь неё видно быть не должно.
+  line(!visible(tep, [-16, EYE, 0], [16, EYE, 0]),
+       "сквозь котельную не видно", "двор, x от -16 до 16");
+}
+
+// ---------------------------------------------------------------------------
+// Общий сервер: раунды и смена карты
+// ---------------------------------------------------------------------------
+
+head("Общий сервер");
+
+line(mapForRound(1) === MAIN.maps[0] && mapForRound(5) === MAIN.maps[0],
+     `первые ${MAIN.mapsPerCycle} раундов идут на одной карте`,
+     `1 → ${mapForRound(1)}, ${MAIN.mapsPerCycle} → ${mapForRound(MAIN.mapsPerCycle)}`);
+
+line(mapForRound(MAIN.mapsPerCycle + 1) === MAIN.maps[1],
+     `на ${MAIN.mapsPerCycle + 1}-м раунде карта меняется`,
+     `${MAIN.mapsPerCycle} → ${mapForRound(MAIN.mapsPerCycle)}, ` +
+     `${MAIN.mapsPerCycle + 1} → ${mapForRound(MAIN.mapsPerCycle + 1)}`);
+
+{
+  // Круг замыкается: после последней карты снова первая, и так бесконечно.
+  const perCycle = MAIN.mapsPerCycle, count = MAIN.maps.length;
+  const afterFullCircle = mapForRound(perCycle * count + 1);
+  line(afterFullCircle === MAIN.maps[0], "круг карт замыкается",
+       `раунд ${perCycle * count + 1} → ${afterFullCircle}`);
+
+  // Все карты в списке существуют. Опечатка в имени дала бы «Карьер» вместо
+  // задуманной карты — buildMap молча подставляет его для незнакомого имени.
+  const known = MAIN.maps.every(id => buildMap(id).spawns?.length > 0);
+  line(known, "все карты цикла существуют", MAIN.maps.join(", "));
+}
+
+{
+  // Ведущий — ровно один и тот же у всех, кто видит один список.
+  const sessions = ["s9", "s2", "s7"];
+  const keepers = sessions.filter(s => isRoundKeeper(s, sessions));
+  line(keepers.length === 1 && keepers[0] === "s2",
+       "раунды ведёт ровно один и тот же", keepers.join(", ") || "никто");
+  // Он ушёл — дело берёт следующий, и снова один.
+  const left = ["s9", "s7"];
+  const next = left.filter(s => isRoundKeeper(s, left));
+  line(next.length === 1 && next[0] === "s7",
+       "ведущий ушёл — берёт следующий", next.join(", ") || "никто");
+  line(!isRoundKeeper("s1", []), "в пустой комнате вести некому", "нет игроков");
 }
 
 const total = document.getElementById("total");

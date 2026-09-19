@@ -39,6 +39,36 @@ export function roomCode(){
 /** Через сколько без единого удара пульса комната считается брошенной. */
 const STALE_MS = 60_000;
 
+/**
+ * Постоянный сервер — комната с заранее известным именем, которая не
+ * закрывается никогда.
+ *
+ * Своего сервера у игры нет, и «постоянный» тут значит не «где-то крутится
+ * процесс», а «ветка в базе, которую никто не сносит». Пустую комнату
+ * подметает первый зашедший в лобби — эту не подметает никто, поэтому зайти в
+ * неё можно в любое время и оказаться там, где уже кто-то есть. Раунды крутит
+ * тот из присутствующих, чей ключ сессии меньше всех: выбирать никого не надо,
+ * все клиенты приходят к одному ответу сами, и смена ведущего при уходе
+ * происходит молча.
+ */
+export const MAIN_ROOM = "main";
+export const MAIN = {
+  id: MAIN_ROOM,
+  name: "Застава — общий",
+  mode: "team",
+  maxPlayers: 16,
+  killsToWin: 15,          // сколько убийств набирает команда за раунд
+  roundSeconds: 360,       // ...или шесть минут, что раньше
+  mapsPerCycle: 5,         // каждые пять раундов — новая карта
+  maps: ["karier", "depo", "teplitsy", "plotina"]
+};
+
+/** Какая карта на этом раунде. Круг по списку, номер раунда с единицы. */
+export function mapForRound(round){
+  const step = Math.floor((Math.max(1, round) - 1) / MAIN.mapsPerCycle);
+  return MAIN.maps[step % MAIN.maps.length];
+}
+
 export function watchRooms(callback){
   return onValue(ref(rtdb, "roomIndex"), snap => {
     const all = snap.val() || {};
@@ -76,6 +106,9 @@ function countOf(snap){
 
 /** Тихо убрать комнату, в которой никого не осталось. Ошибки прав — не беда. */
 export async function sweepRoom(roomId){
+  // Постоянный сервер не подметается никогда: он на то и постоянный, чтобы
+  // человек мог зайти в любое время и оказаться не один.
+  if (roomId === MAIN_ROOM) return false;
   try {
     const players = await get(ref(rtdb, `rooms/${roomId}/players`));
     if (countOf(players) > 0) return false;
@@ -149,14 +182,40 @@ export async function countPlayers(roomId){
   return countOf(await get(ref(rtdb, `rooms/${roomId}/players`)));
 }
 
-/** Есть ли куда войти: код есть, комната есть, места остались. */
-export async function roomCapacity(roomId){
-  const [metaSnap, count] = await Promise.all([
-    get(ref(rtdb, `rooms/${roomId}/meta`)),
-    countPlayers(roomId)
+/**
+ * Дождаться обещания, но не дольше отведённого. Без этого на плохой связи
+ * игра просто зависала: get() ходит на сервер В ОБХОД кэша и своего срока
+ * ожидания не имеет — в метро или в едущей машине он может не ответить
+ * никогда.
+ */
+function within(promise, ms, fallback){
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve(fallback), ms))
   ]);
-  const meta = metaSnap.val();
+}
+
+/**
+ * Есть ли куда войти: комната есть, места остались.
+ *
+ * Если ответа нет за пару секунд — ПУСКАЕМ. Проверка мест удобство, а не
+ * охрана (лимит и так держится на честности, см. README), и запирать человека
+ * перед входом в матч из-за того, что у него моргнул интернет, — худшее из
+ * возможных решений.
+ */
+export async function roomCapacity(roomId){
+  const SLOW = 2500;
+  const [metaSnap, count] = await Promise.all([
+    within(get(ref(rtdb, `rooms/${roomId}/meta`)).catch(() => null), SLOW, null),
+    within(countPlayers(roomId).catch(() => -1), SLOW, -1)
+  ]);
+
+  const meta = metaSnap?.val?.() ?? null;
+  // Сеть не ответила — не мешаем: комнату всё равно проверит сам матч, когда
+  // получит meta по подписке.
+  if (!metaSnap || count < 0) return { ok: true, slow: true, meta, count: 0, max: 0 };
   if (!meta) return { ok: false, reason: "Комната уже закрылась." };
+
   const max = meta.maxPlayers || 4;
   if (count >= max) return { ok: false, reason: `В комнате уже ${count} из ${max} — мест нет.`, meta, count };
   return { ok: true, meta, count, max };
@@ -181,7 +240,10 @@ export async function closeRoom(roomId){
  * бессмысленно, он сам ещё числится в списке.
  */
 export async function closeIfEmpty(roomId){
-  const count = await countPlayers(roomId).catch(() => 1);
+  // Тоже под сроком: человек нажал «Выйти в лобби», и ждать из-за него ответа
+  // сети неизвестно сколько нельзя. Не ответила — считаем, что кто-то есть, и
+  // комнату не трогаем: её потом подметёт лобби, когда пульс протухнет.
+  const count = await within(countPlayers(roomId).catch(() => 1), 2500, 1);
   if (count > 0) return false;
   return sweepRoom(roomId);
 }
@@ -203,26 +265,82 @@ export function setRoomState(roomId, state, extra = {}){
 // ---------------------------------------------------------------------------
 
 /**
+ * Зеркало своей карточки: то, что мы в последний раз отправили про себя.
+ *
+ * Нужно ради переподключения — см. joinRoom ниже. Ключ тот же, что и путь в
+ * базе, так что две вкладки одного человека друг другу не мешают.
+ */
+const mine = new Map();
+
+/**
  * Входит в комнату и обещает базе убрать себя, если связь оборвётся.
- * onDisconnect — единственное, что спасает от "призраков": человек закрыл
+ *
+ * onDisconnect — единственное, что спасает от «призраков»: человек закрыл
  * вкладку, а его боец так и стоит посреди карты. Обещание даётся серверу
  * ЗАРАНЕЕ, поэтому срабатывает даже при выдернутом кабеле.
+ *
+ * И вот из-за этого же обещания игра ломалась на плохой связи — так, что
+ * человека переставали ВИДЕТЬ остальные, хотя у себя он бегал как ни в чём не
+ * бывало. Цепочка такая:
+ *
+ *   1. связь моргнула (метро, лифт, машина) — сервер выполняет обещание и
+ *      стирает карточку игрока целиком;
+ *   2. связь вернулась, но обещание уже ИСПОЛНЕНО и больше не действует:
+ *      onDisconnect срабатывает один раз, его надо давать заново;
+ *   3. игра продолжает слать только координаты (pushState), а в них нет ни
+ *      uid, ни имени. Правило базы требует, чтобы у карточки они были, — и
+ *      каждая такая запись отвергается. Карточки нет и не появится.
+ *
+ * Итог: боец жив у себя на экране и не существует для всех остальных, пока не
+ * перезайдёт. Поэтому здесь мы следим за служебным путём `.info/connected` и
+ * на КАЖДОЕ восстановление связи заново даём обещание и заново пишем ПОЛНУЮ
+ * карточку — с именем, здоровьем и счётом, какими они стали к этой секунде.
  */
 export async function joinRoom(roomId, sessionUid, player){
-  const me = ref(rtdb, `rooms/${roomId}/players/${sessionUid}`);
-  await onDisconnect(me).remove();
-  await set(me, {
+  const path = `rooms/${roomId}/players/${sessionUid}`;
+  const me = ref(rtdb, path);
+
+  const state = {
     ...player,
     hp: 100, kills: 0, deaths: 0,
-    x: 0, y: 0, z: 0, yaw: 0,
-    t: serverTimestamp()
+    x: 0, y: 0, z: 0, yaw: 0, pitch: 0
+  };
+  mine.set(path, state);
+
+  const rejoin = () => onDisconnect(me).remove()
+    .then(() => set(me, { ...mine.get(path), t: serverTimestamp() }));
+
+  await rejoin();
+
+  // Первое срабатывание — это уже установленная связь, её мы только что
+  // обработали сами; дальше каждое true означает, что связь ВЕРНУЛАСЬ.
+  let first = true;
+  const stopConn = onValue(ref(rtdb, ".info/connected"), snap => {
+    if (snap.val() !== true) return;
+    if (first){ first = false; return; }
+    rejoin().catch(() => {});
   });
-  // Выход: убрать себя и, если больше никого не осталось, закрыть комнату.
-  // Проверку делает именно уходящий — на сервере некому.
+
+  // Выход: перестать следить за связью, убрать себя и, если больше никого не
+  // осталось, закрыть комнату. Проверку делает именно уходящий — на сервере
+  // некому.
   return async () => {
+    stopConn();
+    mine.delete(path);
     await remove(me).catch(() => {});
     await closeIfEmpty(roomId).catch(() => {});
   };
+}
+
+/**
+ * Связь с базой: есть или нет.
+ *
+ * Отдельно от игры это знать нельзя, а знать надо: на плохой связи чужие бойцы
+ * замирают, и без подсказки это выглядит как «игра сломалась» или «никого нет»,
+ * а не как «пропал интернет».
+ */
+export function watchConnection(callback){
+  return onValue(ref(rtdb, ".info/connected"), snap => callback(snap.val() === true));
 }
 
 export function watchPlayers(roomId, { onJoin, onUpdate, onLeave }){
@@ -245,13 +363,28 @@ export function watchPlayers(roomId, { onJoin, onUpdate, onLeave }){
   return () => { stopValue(); stopGone(); };
 }
 
+/**
+ * Записать что-то про себя и запомнить это в зеркале.
+ *
+ * Зеркало — не кэш ради скорости, а то, чем восстанавливается карточка после
+ * обрыва связи (см. joinRoom). Поэтому проходить через него обязаны ВСЕ записи
+ * о себе: если хоть одна пойдёт мимо, после переподключения у бойца окажется,
+ * скажем, вчерашнее здоровье или обнулённый счёт.
+ */
+function pushMine(roomId, sessionUid, patch){
+  const path = `rooms/${roomId}/players/${sessionUid}`;
+  const state = mine.get(path);
+  if (state) Object.assign(state, patch);
+  return update(ref(rtdb, path), patch).catch(() => {});
+}
+
 /** Позиция. Шлём часто и мелкими порциями — только то, что меняется. */
 export function pushState(roomId, sessionUid, state){
-  return update(ref(rtdb, `rooms/${roomId}/players/${sessionUid}`), state).catch(() => {});
+  return pushMine(roomId, sessionUid, state);
 }
 
 export function pushScore(roomId, sessionUid, patch){
-  return update(ref(rtdb, `rooms/${roomId}/players/${sessionUid}`), patch).catch(() => {});
+  return pushMine(roomId, sessionUid, patch);
 }
 
 // ---------------------------------------------------------------------------
@@ -305,4 +438,153 @@ export function sendChat(roomId, { uid, name, tag, text }){
 export function watchChat(roomId, callback){
   const recent = query(ref(rtdb, `rooms/${roomId}/chat`), limitToLast(30));
   return onChildAdded(recent, snap => callback({ id: snap.key, ...snap.val() }));
+}
+
+// ---------------------------------------------------------------------------
+// Присутствие: кто сейчас играет и где
+// ---------------------------------------------------------------------------
+//
+// Лежит в Realtime Database под ключом СЕССИИ, а не аккаунта: сверять личность
+// правила тут умеют только с auth.uid, а он анонимный. Uid из мессенджера идёт
+// полем внутри — значит, теоретически можно объявить себя чужим человеком.
+// Это тот же уровень доверия, что и у урона (см. README), и для строчки «кто
+// сейчас играет» его достаточно; ничего, кроме показа в списке, на этом поле
+// не держится.
+//
+// Две вкладки одного человека дают две записи — и правильно: это два разных
+// бойца в двух разных комнатах.
+
+/** Объявить о себе. Возвращает функцию «убрать себя». */
+export async function announce(sessionUid, info){
+  const me = ref(rtdb, `presence/${sessionUid}`);
+  const write = () => onDisconnect(me).remove()
+    .then(() => set(me, { ...info, at: Date.now() }));
+
+  await write().catch(() => {});
+
+  // То же, что и с карточкой бойца: обещание onDisconnect одноразовое, и после
+  // обрыва связи присутствие надо объявлять заново, иначе человек пропадает из
+  // списка до перезахода.
+  let first = true;
+  const stop = onValue(ref(rtdb, ".info/connected"), snap => {
+    if (snap.val() !== true) return;
+    if (first){ first = false; return; }
+    write().catch(() => {});
+  });
+
+  return () => { stop(); remove(me).catch(() => {}); };
+}
+
+/** Поменять то, что о себе объявлено (сменил комнату, карту, ник). */
+export function updateAnnounce(sessionUid, patch){
+  return update(ref(rtdb, `presence/${sessionUid}`), { ...patch, at: Date.now() })
+    .catch(() => {});
+}
+
+/**
+ * Кто сейчас в игре. Записи старше трёх минут отбрасываем: onDisconnect
+ * срабатывает не всегда (убитая вкладка, спящий телефон), и без этого список
+ * постепенно заполнился бы призраками.
+ */
+export function watchPresence(callback){
+  return onValue(ref(rtdb, "presence"), snap => {
+    const all = snap.val() || {};
+    const fresh = [];
+    for (const [session, row] of Object.entries(all)){
+      if (!row || !row.uid) continue;
+      if (Date.now() - (row.at || 0) > 180_000) continue;
+      fresh.push({ session, ...row });
+    }
+    fresh.sort((a, b) => (b.at || 0) - (a.at || 0));
+    callback(fresh);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Постоянный сервер: раунды и смена карты
+// ---------------------------------------------------------------------------
+
+/**
+ * Поднять постоянную комнату, если её ещё нет.
+ *
+ * Зовут это все подряд, а не какой-то один «главный»: комнаты может не быть
+ * просто потому, что в неё сегодня никто не заходил. Запись идёт с проверкой
+ * «а нет ли уже» — двое, зашедшие одновременно, в худшем случае напишут одно и
+ * то же.
+ */
+export async function ensureMainRoom(){
+  const metaRef = ref(rtdb, `rooms/${MAIN_ROOM}/meta`);
+  const snap = await get(metaRef).catch(() => null);
+  if (snap?.exists()) return snap.val();
+
+  const meta = {
+    map: mapForRound(1),
+    mode: MAIN.mode,
+    code: "OBSHIY",
+    host: "server",
+    hostSession: "server",
+    hostName: MAIN.name,
+    maxPlayers: MAIN.maxPlayers,
+    priv: false,
+    permanent: true,
+    state: ROOM_STATE.LIVE,
+    round: 1,
+    roundEnds: Date.now() + MAIN.roundSeconds * 1000,
+    scoreA: 0,
+    scoreB: 0,
+    createdAt: Date.now(),
+    beat: Date.now(),
+    count: 0
+  };
+  await set(metaRef, meta).catch(() => {});
+  await set(ref(rtdb, `roomIndex/${MAIN_ROOM}`), meta).catch(() => {});
+  return meta;
+}
+
+/**
+ * Начать следующий раунд: счёт обнуляется, номер растёт, карта берётся по
+ * номеру. Зовёт это только ведущий — тот, чей ключ сессии меньше всех в
+ * комнате (см. isRoundKeeper ниже), иначе четверо разом начали бы четыре
+ * раунда подряд.
+ */
+export async function nextRound(meta){
+  const round = (meta.round || 1) + 1;
+  const patch = {
+    round,
+    map: mapForRound(round),
+    roundEnds: Date.now() + MAIN.roundSeconds * 1000,
+    scoreA: 0,
+    scoreB: 0,
+    state: ROOM_STATE.LIVE
+  };
+  await Promise.all([
+    update(ref(rtdb, `rooms/${MAIN_ROOM}/meta`), patch).catch(() => {}),
+    update(ref(rtdb, `roomIndex/${MAIN_ROOM}`), patch).catch(() => {})
+  ]);
+  return patch;
+}
+
+/** Счёт раунда. Пишет тот, кто убил, — по своей команде. */
+export function addRoundKill(team){
+  const field = team === "b" ? "scoreB" : "scoreA";
+  return get(ref(rtdb, `rooms/${MAIN_ROOM}/meta/${field}`))
+    .then(snap => update(ref(rtdb, `rooms/${MAIN_ROOM}/meta`), {
+      [field]: (Number(snap.val()) || 0) + 1
+    }))
+    .catch(() => {});
+}
+
+/**
+ * Ведёт ли раунды именно эта сессия.
+ *
+ * Не голосование и не выборы: просто наименьший ключ среди присутствующих.
+ * Все клиенты видят один и тот же список игроков и приходят к одному ответу; а
+ * когда ведущий уходит, следующий по порядку берёт дело на себя сам, без
+ * всякой передачи полномочий.
+ */
+export function isRoundKeeper(sessionUid, sessions){
+  if (!sessions.length) return false;
+  let best = sessions[0];
+  for (const s of sessions) if (s < best) best = s;
+  return best === sessionUid;
 }

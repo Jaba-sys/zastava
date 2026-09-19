@@ -14,7 +14,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.m
 
 import { hasRealtimeDb } from "../firebase.js";
 import { resolvePlayer } from "../mypeal-auth.js";
-import { ensurePlayer, addMatchResult } from "../profile.js";
+import { ensurePlayer, addMatchResult, displayName } from "../profile.js";
 import { buildMap, mapMeta } from "./maps/index.js";
 import { PLAYER, movePlayer, onGround, raycast } from "./physics.js";
 import { Controls } from "./controls.js";
@@ -29,6 +29,9 @@ import {
 } from "./sound.js";
 import * as net from "../net/live.js";
 import { registerServiceWorker } from "../pwa.js";
+import {
+  setupRenderer, dressMap, detailMaterial, readQuality, saveQuality, QUALITY, QUALITY_ORDER
+} from "./render.js";
 
 const MATCH_SECONDS = 8 * 60;
 const GOAL = { dm: 25, team: 40 };
@@ -61,6 +64,10 @@ let leaving = false;
 let saved = false;
 let aimNow = 1;          // текущее приближение, плавно едет к целевому
 let scopeShown = false;
+let stopAnnounce = null;
+let quality = readQuality();
+let presence = [];       // кто сейчас в игре — для панели в паузе
+let roomList = [];       // открытые комнаты — туда можно перейти
 const BASE_FOV = 78;
 
 const self = {
@@ -90,7 +97,9 @@ async function start(){
   me = {
     sessionUid: resolved.sessionUid,
     uid: resolved.uid,
-    name: profile.name,
+    // В бою человека зовут его игровым позывным, а не именем из мессенджера:
+    // имя там пишут для переписки, а над головой нужно короткое.
+    name: displayName(profile),
     tag: profile.tag,
     team: "free"
   };
@@ -122,6 +131,13 @@ async function start(){
     w: arsenal.current.id
   });
 
+  // Объявляем, где мы: по этому и видно в лобби и в паузе, кто сейчас играет,
+  // и по этому же друг заходит к другу одной кнопкой.
+  stopAnnounce = await net.announce(me.sessionUid, {
+    uid: me.uid, nick: me.name, tag: me.tag || null,
+    room: roomId, map: room.map, mode: room.mode, team: me.team
+  });
+
   spawn();
   wireNetwork();
   wireInput();
@@ -149,17 +165,19 @@ function waitForMeta(){
 
 function buildScene(){
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(map.sky);
-  scene.fog = new THREE.Fog(map.fog.color, map.fog.near, map.fog.far);
   scene.add(map.group);
 
   camera = new THREE.PerspectiveCamera(BASE_FOV, innerWidth / innerHeight, 0.08, 600);
 
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  // Свет, поверхность и воздух — всё в render.js. Здесь только зовём: небо
+  // куполом, карта окружения под цвет этой карты, шум в шероховатости и
+  // нормали, разрешение теней. Качество берётся из настроек или угадывается
+  // по устройству.
+  setupRenderer(renderer, quality);
+  dressMap(renderer, scene, map, quality);
 
   addEventListener("resize", () => {
     camera.aspect = innerWidth / innerHeight;
@@ -206,6 +224,17 @@ const viewModel = {
     const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, 0.075), metal);
     mag.position.set(0, -0.1, -0.05);
 
+    // Ствол в руках — ближайший к глазу предмет на экране, и если он остался
+    // гладким пластиком, вся работа над картой пропадает зря: глаз сравнивает
+    // именно с ним. Поэтому тот же шум и то же окружение, что и у карты, но
+    // масштаб мельче — предмет-то маленький.
+    const q = QUALITY[quality];
+    for (const material of [metal, wood]){
+      if (q.detail) detailMaterial(material, { bump: q.bump * 0.5, scale: 9, tint: 0.12 });
+      material.envMap = scene.environment || null;
+      material.envMapIntensity = 0.5 + material.metalness * 0.6;
+    }
+
     this.group.add(body, barrel, sight, stock, grip, mag);
     this.base = new THREE.Vector3(0.21, -0.15, -0.72);
     this.group.position.copy(this.base);
@@ -216,12 +245,32 @@ const viewModel = {
     this.flash.position.set(0.2, -0.1, -0.95);
     this.scene.add(this.flash);
 
-    // Ровный свет со всех сторон делает ствол плоским пятном. Мягкая заливка
-    // плюс один направленный источник сверху-слева — и видно грани.
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-    const key = new THREE.DirectionalLight(0xfff0dc, 1.6);
-    key.position.set(-0.6, 1, 0.4);
+    // Свет на оружии — три источника, как ставят предмет в студии, и заливка
+    // нарочно слабая. Раньше тут была почти ровная засветка со всех сторон, и
+    // после тональной компрессии ствол превращался в плоский силуэт: грани
+    // переставали отличаться друг от друга, и самый близкий к глазу предмет на
+    // экране выглядел вырезанным из бумаги.
+    //
+    //   ключевой  — тёплый, сверху-слева: он и лепит форму;
+    //   заполняющий — холодный, снизу-справа и втрое слабее: он не даёт тени
+    //                 провалиться в чёрное, но формы не портит;
+    //   контровой — сзади: тонкая светлая кромка по верхнему ребру, от которой
+    //               предмет отделяется от карты за ним.
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.28));
+
+    const key = new THREE.DirectionalLight(0xfff0dc, 2.0);
+    key.position.set(-0.7, 1, 0.45);
     this.scene.add(key);
+
+    const fill = new THREE.DirectionalLight(0xbcd2e8, 0.7);
+    fill.position.set(0.8, -0.5, 0.3);
+    this.scene.add(fill);
+
+    // Контровой слабее ключевого втрое: его задача — тонкая кромка, а не
+    // второй блик. На единице верхняя грань ствола уходила в чистый белый.
+    const rim = new THREE.DirectionalLight(0xffffff, 0.62);
+    rim.position.set(0.2, 0.55, -1);
+    this.scene.add(rim);
 
     this.recoil = 0;
     this.bob = 0;
@@ -361,9 +410,29 @@ function wireNetwork(){
         playKill();
         localStats.kills++;
         net.pushScore(roomId, me.sessionUid, { kills: localStats.kills });
+        // Счёт раунда на общем сервере прибавляется ИМЕННО ЗДЕСЬ, в момент
+        // убийства, и нигде больше. checkGoal() зовётся ещё и при каждом
+        // обновлении табло — поставь начисление туда, и счёт команды рос бы от
+        // любого шевеления в комнате.
+        if (room.permanent) net.addRoundKill(me.team);
         checkGoal();
       }
     }
+  }));
+
+  // Кто сейчас играет — для панели в паузе. Держим подписку всё время, а не
+  // заводим её по Escape: подписка дешёвая, а пауза должна открываться сразу,
+  // а не «сейчас посмотрим».
+  stopWatchers.push(net.watchPresence(rows => { presence = rows; renderWhoNow(); }));
+  stopWatchers.push(net.watchRooms(rows => { roomList = rows; renderWhoNow(); }));
+
+  // Связь. На плохом интернете чужие бойцы просто перестают двигаться, и без
+  // подсказки это неотличимо от «в комнате никого». Говорим прямо.
+  let wasOnline = true;
+  stopWatchers.push(net.watchConnection(online => {
+    document.getElementById("netlost").classList.toggle("show", !online);
+    if (online && !wasOnline) hud.say("Связь вернулась.");
+    wasOnline = online;
   }));
 
   stopWatchers.push(net.watchChat(roomId, message => {
@@ -373,7 +442,15 @@ function wireNetwork(){
 
   stopWatchers.push(net.watchMeta(roomId, meta => {
     if (!meta){ endMatch("Комната закрылась"); return; }
+    const wasRound = roundNow;
     room = meta;
+    if (meta.permanent){
+      // Общий сервер не заканчивается — у него меняются раунды.
+      if (!wasRound){ roundNow = meta.round || 1; roundMap = meta.map || null; }
+      else if (meta.round && meta.round !== wasRound) onRoundChanged(meta);
+      hud.score(roundScore(me.team), net.MAIN.killsToWin, "team");
+      return;
+    }
     if (meta.state === net.ROOM_STATE.OVER && !matchOver) endMatch(meta.winner || "Матч окончен");
   }));
 
@@ -540,6 +617,27 @@ function wireInput(){
     };
   }
 
+  // ---- качество картинки --------------------------------------------------
+  // Смена качества перестраивает шейдеры и карту окружения, поэтому делается
+  // перезагрузкой матча, а не на ходу: половина настроек (шум в шейдере,
+  // разрешение теней, PMREM) живёт внутри уже собранных материалов, и снимать
+  // их по одной — верный способ получить наполовину перестроенную сцену.
+  const qualityRow = document.getElementById("qualityRow");
+  for (const id of QUALITY_ORDER){
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = quality === id ? "on" : "";
+    button.textContent = QUALITY[id].name;
+    button.onclick = () => {
+      if (quality === id) return;
+      saveQuality(id);
+      playClick();
+      hud.banner("Графика: " + QUALITY[id].name, "Перезапускаем матч", 1400);
+      setTimeout(() => location.reload(), 900);
+    };
+    qualityRow.append(button);
+  }
+
   const volume = document.getElementById("volume");
   volume.value = Math.round(getVolume() * 100);
   document.getElementById("volumeValue").textContent = volume.value;
@@ -558,6 +656,94 @@ function wireInput(){
   };
 }
 
+/**
+ * Панель «кто сейчас играет» в паузе.
+ *
+ * Сверху — бойцы этого матча со счётом, ниже — все остальные, кто сейчас в
+ * «Заставе»: в какой комнате и на какой карте. Смысл именно в нижней части:
+ * зайти вдвоём в пустую комнату и не понять, что рядом идёт матч на шестерых, —
+ * обычное дело, когда список видно только из лобби.
+ */
+function renderWhoNow(){
+  const here = $("whoHere"), other = $("whoElse");
+  if (!here || !other) return;
+
+  // Свой матч: я и все чужие бойцы, по убийствам.
+  const rows = [
+    { name: me.name, team: me.team, kills: localStats.kills, deaths: localStats.deaths, mine: true },
+    ...[...remotes.values()].map(r => ({
+      name: r.name, team: r.team, kills: r.kills || 0, deaths: r.deaths || 0
+    }))
+  ].sort((a, b) => b.kills - a.kills);
+
+  here.innerHTML = "";
+  for (const row of rows){
+    const line = document.createElement("div");
+    line.className = "who-row" + (row.mine ? " mine" : "");
+    line.innerHTML = `
+      <span class="who-team ${row.team || "free"}"></span>
+      <b>${escapeHtml(row.name)}</b>
+      <u>${row.kills}</u><u class="dim">${row.deaths}</u>`;
+    here.append(line);
+  }
+
+  // Остальные комнаты. Своя не считается, закрытые не показываем — но если
+  // там играет кто-то из присутствия, число всё равно видно по комнате.
+  const counts = new Map();
+  for (const row of presence){
+    if (!row.room || row.room === roomId) continue;
+    counts.set(row.room, (counts.get(row.room) || 0) + 1);
+  }
+
+  const elsewhere = roomList
+    .filter(r => r.id !== roomId && !r.priv && r.state !== net.ROOM_STATE.OVER)
+    .map(r => ({ ...r, live: counts.get(r.id) || r.count || 0 }))
+    .sort((a, b) => b.live - a.live)
+    .slice(0, 6);
+
+  const playing = presence.filter(r => r.room).length;
+  $("whoCount").textContent = `${playing} в игре`;
+
+  other.innerHTML = "";
+  if (!elsewhere.length){
+    other.innerHTML = `<p class="who-empty">Других матчей сейчас нет.</p>`;
+    return;
+  }
+  for (const room of elsewhere){
+    const line = document.createElement("div");
+    line.className = "who-room";
+    const isMain = room.id === net.MAIN_ROOM;
+    line.innerHTML = `
+      <div>
+        <b>${isMain ? "Застава — общий" : escapeHtml(room.hostName || "Боец")}</b>
+        <i>${escapeHtml(mapMeta(room.map).name)} · ${room.mode === "team" ? "команда" : "каждый сам"}</i>
+      </div>
+      <span>${room.live}/${room.maxPlayers || 4}</span>
+      <button class="btn btn-ghost tiny" type="button">Перейти</button>`;
+    line.querySelector("button").onclick = () => switchRoom(room.id);
+    other.append(line);
+  }
+}
+
+const $ = id => document.getElementById(id);
+
+function escapeHtml(text){
+  return String(text ?? "").replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+/** Уйти в другой матч. Сначала выходим честно, потом переходим. */
+async function switchRoom(id){
+  if (leaving) return;
+  leaving = true;
+  stopAnnounce?.();
+  for (const stop of stopWatchers) { try { stop(); } catch { /* ignore */ } }
+  stopWatchers = [];
+  try { await leaveRoom?.(); } catch { /* ignore */ }
+  await saveResult();
+  location.href = `game.html?room=${id}`;
+}
+
 /** Меню паузы. Оно же — экран, с которого бой начинается. */
 function openPause(){
   if (matchOver || leaving) return;
@@ -566,6 +752,7 @@ function openPause(){
   controls.firing = false;
   start.classList.add("paused");
   start.classList.remove("gone");
+  renderWhoNow();
   document.getElementById("startTitle").textContent = "Пауза";
   document.getElementById("startSub").textContent = "Матч продолжается без тебя";
   touch?.setVisible(false);
@@ -579,6 +766,7 @@ function openPause(){
 async function leaveMatch(){
   if (leaving) return;
   leaving = true;
+  stopAnnounce?.();
   document.getElementById("leaveBtn").textContent = "Выходим…";
 
   for (const stop of stopWatchers) { try { stop(); } catch { /* ignore */ } }
@@ -612,6 +800,8 @@ function frame(){
   viewModel.update(dt, speed, arsenal.current.id);
   stepAim(dt);
   stepSteps(dt, speed);
+  stepLabels();
+  stepRound();
 
   hud.ammo(arsenal);
   hud.timer(secondsLeft());
@@ -619,7 +809,51 @@ function frame(){
   renderer.render(scene, camera);
   viewModel.render(renderer);
 
-  if (secondsLeft() <= 0 && !matchOver) endMatch("Время вышло");
+  // На общем сервере нулевой таймер — это конец РАУНДА, им занимается
+  // stepRound; заканчивать матч по нему нельзя, матч там бесконечный.
+  if (!room.permanent && secondsLeft() <= 0 && !matchOver) endMatch("Время вышло");
+}
+
+/**
+ * Имена над головами: гасим те, что за стеной.
+ *
+ * Метка рисуется поверх всей сцены (depthTest отключён) — иначе её резало бы
+ * собственной каской бойца и углами вагонов, и читалась бы она кусками.
+ * Обратная сторона ровно та, на которую и жаловались: имя светилось сквозь
+ * стены, и по нему было видно, кто за каким вагоном стоит, — половина смысла
+ * укрытий на «Депо» и «Теплицах» пропадала.
+ *
+ * Поэтому видимость считаем сами: пускаем луч от глаз к голове чужого бойца и
+ * смотрим, не упрётся ли он раньше в геометрию карты. СТЕКЛО не считается
+ * преградой (raycast пропускает bulletPass) — и это правильно: сквозь стекло
+ * человека и так видно целиком, прятать над ним имя было бы странно.
+ *
+ * Считаем не каждый кадр, а раз в сотню миллисекунд и по одному лучу на
+ * бойца: имя не должно мигать от каждого шага, а лишние лучи по всем
+ * коллайдерам карты — это как раз то, на чём проседает частота кадров.
+ */
+const LABEL_RANGE = 90;        // дальше имена не читаются всё равно
+let labelClock = 0;
+const labelDir = new THREE.Vector3();
+const labelHead = new THREE.Vector3();
+
+function stepLabels(){
+  const now = performance.now();
+  if (now - labelClock < 100) return;
+  labelClock = now;
+
+  for (const remote of remotes.values()){
+    remote.head(labelHead);
+    labelDir.copy(labelHead).sub(camera.position);
+    const distance = labelDir.length();
+
+    if (distance > LABEL_RANGE){ remote.setVisible(false); continue; }
+    labelDir.divideScalar(distance || 1);
+
+    // Цели не передаём: нас интересует только, есть ли СТЕНА между нами.
+    const hit = raycast(camera.position, labelDir, map.colliders, [], distance - 0.3);
+    remote.setVisible(!hit);
+  }
 }
 
 /**
@@ -792,6 +1026,14 @@ function takeDamage(amount, fromSession, fromName){
 }
 
 function checkGoal(){
+  // Общий сервер живёт раундами: цель — счёт КОМАНДЫ за раунд, он же лежит в
+  // meta и одинаков у всех. Здесь только показываем: начисляет обработчик
+  // убийства, потому что сюда заходят ещё и по обновлению табло.
+  if (room.permanent){
+    hud.score(roundScore(me.team), net.MAIN.killsToWin, "team");
+    return;
+  }
+
   const goal = GOAL[room.mode] || GOAL.dm;
   const mine = room.mode === "team" ? teamScore(me.team) : localStats.kills;
   hud.score(mine, goal, room.mode);
@@ -802,6 +1044,84 @@ function checkGoal(){
   }
 }
 
+/**
+ * Счёт команды за текущий раунд на общем сервере.
+ *
+ * Берётся из meta, а не складывается из счётчиков бойцов, и это важно: убийства
+ * у бойца копятся за всё время, что он в комнате, а раунд обнуляется. Складывая
+ * личные счётчики, мы бы получали сумму за весь вечер, и раунд заканчивался бы
+ * через минуту после начала.
+ */
+function roundScore(team){
+  return Number(team === "b" ? room.scoreB : room.scoreA) || 0;
+}
+
+/**
+ * Раунды на общем сервере.
+ *
+ * Крутит их ровно один клиент — тот, чей ключ сессии меньше всех среди
+ * присутствующих. Это не выборы: все видят один и тот же список игроков и
+ * приходят к одному ответу сами, а когда ведущий уходит, следующий по порядку
+ * берёт дело на себя молча. Иначе четверо разом начали бы четыре раунда.
+ *
+ * Проверяем раз в две секунды, а не каждый кадр: спешить некуда, а шестьдесят
+ * записей в секунду в meta не нужны никому.
+ */
+let roundCheckedAt = 0;
+function stepRound(){
+  if (!room?.permanent || matchOver || leaving) return;
+
+  const now = Date.now();
+  if (now - roundCheckedAt < 2000) return;
+  roundCheckedAt = now;
+
+  const sessions = [me.sessionUid, ...remotes.keys()];
+  if (!net.isRoundKeeper(me.sessionUid, sessions)) return;
+
+  const done = roundScore("a") >= net.MAIN.killsToWin
+            || roundScore("b") >= net.MAIN.killsToWin
+            || now > (room.roundEnds || 0);
+  if (done) net.nextRound(room).catch(() => {});
+}
+
+/**
+ * Начался новый раунд.
+ *
+ * Если вместе с ним сменилась карта — перезагружаем страницу. Перестраивать
+ * сцену на ходу можно, но это самый богатый на ошибки кусок работы во всей
+ * игре: надо снять все старые коллайдеры, выбросить геометрию, переставить
+ * всех бойцов и не забыть ни одной мелочи. Перезагрузка делает то же самое
+ * гарантированно и занимает секунду — на общем сервере это происходит раз в
+ * полчаса, и лучше честная пауза, чем редкий необъяснимый сбой.
+ */
+let roundNow = 0;
+let roundMap = null;      // карта, по которой мы СЕЙЧАС бегаем
+
+function onRoundChanged(meta){
+  // Сравниваем с отдельно запомненной картой, а не с room.map. Причина в том,
+  // что room к этому моменту уже переписан пришедшим meta, и карта в нём,
+  // разумеется, новая; а полагаться на то, что предыдущий объект meta никто не
+  // изменил, нельзя — это зависит от того, отдаёт ли библиотека копию.
+  // Собственная переменная не зависит ни от чего.
+  const mapChanged = meta.map && roundMap && meta.map !== roundMap;
+  roundNow = meta.round;
+  roundMap = meta.map || roundMap;
+
+  if (mapChanged){
+    hud.banner(mapMeta(meta.map).name, `Раунд ${meta.round} — меняем карту`, 3000);
+    playMatchEnd();
+    setTimeout(() => { location.href = `game.html?room=${roomId}`; }, 3200);
+    return;
+  }
+
+  hud.banner(`Раунд ${meta.round}`, "Счёт обнулён", 2200);
+  playSpawn();
+  localStats.kills = 0;
+  net.pushScore(roomId, me.sessionUid, { kills: 0, deaths: localStats.deaths });
+  if (self.alive) { self.hp = 100; hud.health(self.hp); }
+  else spawn();
+}
+
 function teamScore(team){
   let total = team === me.team ? localStats.kills : 0;
   for (const remote of remotes.values()) if (remote.team === team) total += remote.kills || 0;
@@ -809,6 +1129,10 @@ function teamScore(team){
 }
 
 function secondsLeft(){
+  // На общем сервере матч не кончается никогда — кончается РАУНД, и его конец
+  // записан в meta.roundEnds. Считать от начала матча тут нечего: он идёт
+  // круглосуточно.
+  if (room.permanent) return ((room.roundEnds || Date.now()) - Date.now()) / 1000;
   return MATCH_SECONDS - (Date.now() - (room.startedAt || room.createdAt || Date.now())) / 1000;
 }
 

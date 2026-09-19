@@ -46,7 +46,14 @@ export class RemotePlayer {
     this.group.add(this.label);
 
     this.box = new THREE.Box3();
+    this.visible = true;      // видно ли его отсюда — считается в main.js
+    this.alive = true;
     this._updateBox();
+  }
+
+  /** Точка, по которой проверяется видимость: голова, а не ноги. */
+  head(out){
+    return out.set(this.shown.x, this.shown.y + PLAYER.eye, this.shown.z);
   }
 
   apply(data){
@@ -96,9 +103,21 @@ export class RemotePlayer {
     this.soldier.update(dt, this.speed, this.pitch, dead);
     // Мёртвый остаётся лежать, но имя над ним гасим — иначе поле боя
     // превращается в список надписей.
-    this.label.visible = !dead;
+    this.alive = !dead;
+    this.label.visible = !dead && this.visible;
 
     this._updateBox();
+  }
+
+  /**
+   * Видно ли его отсюда — решает вызывающий (см. stepLabels в main.js) и
+   * кладёт сюда. Само по себе имя над головой рисуется ПОВЕРХ всего
+   * (depthTest отключён), иначе его резало бы собственной каской; из-за этого
+   * оно же светилось и сквозь стены, показывая, кто за каким вагоном стоит.
+   */
+  setVisible(value){
+    this.visible = value;
+    this.label.visible = value && this.alive !== false;
   }
 
   _updateBox(){

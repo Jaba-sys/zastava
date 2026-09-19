@@ -25,6 +25,11 @@
 
 <canvas id="view"></canvas>
 
+<!-- Плёнка поверх картинки: лёгкое затемнение по краям и еле заметное зерно.
+     Стоит ноль (это CSS, а не лишний проход рендера), а взгляд собирает к
+     центру экрана и убирает «стерильность» ровных цифровых пикселей. -->
+<div id="filmgrain"></div>
+
 <!-- прицел -->
 <div id="cross"><i></i><i></i><i></i><i></i></div>
 <div id="hitmark"><i></i><i></i></div>
@@ -55,6 +60,10 @@
 
 <!-- подсказка по карте -->
 <div id="hint"></div>
+
+<!-- связь пропала: без этой строчки замершие чужие бойцы выглядят как
+     «никого нет» или «игра сломалась», а не как пропавший интернет -->
+<div id="netlost"><i></i>Связь пропала — чужие бойцы замерли. Ждём…</div>
 
 <!-- чат матча -->
 <div id="chat">
@@ -89,10 +98,24 @@
     </div>
 
     <label class="volume">
+      <span>Графика</span>
+      <span class="quality-row" id="qualityRow"></span>
+    </label>
+
+    <label class="volume">
       <span>Громкость</span>
       <input id="volume" type="range" min="0" max="100" step="1">
       <b id="volumeValue">70</b>
     </label>
+
+    <div class="who-now">
+      <div class="who-head">
+        <h3>Кто сейчас играет</h3>
+        <span id="whoCount">—</span>
+      </div>
+      <div class="who-list" id="whoHere"></div>
+      <div class="who-list who-else" id="whoElse"></div>
+    </div>
 
     <button class="btn btn-ghost pause-wide" id="editTouchBtn" type="button">Настроить кнопки</button>
     <button class="btn btn-ghost" id="leaveBtn" type="button">Выйти в лобби</button>

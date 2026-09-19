@@ -16,7 +16,8 @@
 
 import { db } from "./firebase.js";
 import {
-  doc, getDoc, setDoc, updateDoc, increment, arrayUnion, serverTimestamp
+  doc, getDoc, setDoc, updateDoc, increment, arrayUnion, serverTimestamp,
+  collection, query, where, limit, getDocs
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import {
   WEAPONS, STARTER_OWNED, DEFAULT_LOADOUT, LOADOUT_SLOTS
@@ -24,10 +25,28 @@ import {
 
 const ref = uid => doc(db, "gamePlayers", uid);
 
+/**
+ * Позывной, под которым человека видят в бою.
+ *
+ * Отдельно от имени в мессенджере — и это не прихоть. Имя в MyPeal люди пишут
+ * для переписки («Владимир Петрович»), а над головой в бою нужен короткий
+ * позывной, который читается за полсекунды. Раньше в игру тянулось имя из
+ * мессенджера, и сменить его можно было только там — то есть заодно во всех
+ * чатах. Теперь ник живёт в игре, а имя из мессенджера остаётся как было.
+ */
+export const NICK_MIN = 2;
+export const NICK_MAX = 18;
+
+/** Ник, под которым игрока показывают. Старым карточкам подставляем имя. */
+export function displayName(player){
+  return (player?.nick || player?.name || "Боец").slice(0, NICK_MAX);
+}
+
 /** Приводит карточку к нынешнему виду: у старых нет ни монет, ни оружия. */
 function withDefaults(data){
   return {
     ...data,
+    nick: data.nick || data.name || "Боец",
     coins: data.coins ?? 0,
     owned: Array.isArray(data.owned) && data.owned.length ? data.owned : [...STARTER_OWNED],
     loadout: Array.isArray(data.loadout) && data.loadout.length
@@ -58,6 +77,10 @@ export async function ensurePlayer(uid, { name, tag } = {}){
 
   const fresh = {
     name: name || "Боец",
+    // Первый ник — имя из мессенджера, обрезанное до читаемой длины. Дальше
+    // человек меняет его сам в лобби.
+    nick: (name || "Боец").slice(0, NICK_MAX),
+    nickLower: (name || "Боец").slice(0, NICK_MAX).toLowerCase(),
     tag: tag || null,
     points: 0,
     coins: 0,
@@ -76,6 +99,61 @@ export async function ensurePlayer(uid, { name, tag } = {}){
 export async function readPlayer(uid){
   const snap = await getDoc(ref(uid));
   return snap.exists() ? withDefaults(snap.data()) : null;
+}
+
+/**
+ * Сменить игровой ник.
+ *
+ * Занятость проверяем запросом по nickLower — но именно ПРОВЕРЯЕМ, а не
+ * гарантируем: между чтением и записью двое могут взять один ник, и без
+ * транзакции на весь список этого не избежать. Совпавшие ники не ломают
+ * ничего (человек всё равно узнаётся по тегу @), поэтому городить блокировки
+ * ради такой мелочи не стоит — но сказать «занят», когда он очевидно занят,
+ * дёшево и вежливо.
+ */
+export async function setNick(uid, player, wanted){
+  const nick = String(wanted || "").trim().replace(/\s+/g, " ");
+
+  if (nick.length < NICK_MIN) return { ok: false, reason: `Ник короче ${NICK_MIN} символов.` };
+  if (nick.length > NICK_MAX) return { ok: false, reason: `Ник длиннее ${NICK_MAX} символов.` };
+  if (/[<>@]/.test(nick)) return { ok: false, reason: "В нике нельзя < > и @ — @ путают с тегом." };
+  if (nick === player.nick) return { ok: true, player };
+
+  const lower = nick.toLowerCase();
+  const taken = await getDocs(query(
+    collection(db, "gamePlayers"), where("nickLower", "==", lower), limit(2)
+  ));
+  if (taken.docs.some(d => d.id !== uid)){
+    return { ok: false, reason: "Такой ник уже занят. Возьми другой." };
+  }
+
+  await updateDoc(ref(uid), { nick, nickLower: lower });
+  return { ok: true, player: { ...player, nick, nickLower: lower } };
+}
+
+/**
+ * Найти игрока, чтобы позвать в друзья: по тегу @ или по нику.
+ *
+ * Тег надёжнее (он в мессенджере один на всех), ник — привычнее. Ищем и так и
+ * так, точным совпадением без учёта регистра: поиск «по кусочку слова» в
+ * Firestore без отдельной поисковой службы не делается, а городить её ради
+ * списка друзей незачем.
+ */
+export async function findPlayers(text){
+  const needle = String(text || "").trim().replace(/^@/, "").toLowerCase();
+  if (needle.length < 2) return [];
+
+  const players = collection(db, "gamePlayers");
+  const [byTag, byNick] = await Promise.all([
+    getDocs(query(players, where("tag", "==", needle), limit(5))).catch(() => ({ docs: [] })),
+    getDocs(query(players, where("nickLower", "==", needle), limit(5))).catch(() => ({ docs: [] }))
+  ]);
+
+  const found = new Map();
+  for (const d of [...byTag.docs, ...byNick.docs]){
+    found.set(d.id, { uid: d.id, ...withDefaults(d.data()) });
+  }
+  return [...found.values()];
 }
 
 /**
