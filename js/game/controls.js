@@ -12,7 +12,13 @@ const KEYS = {
   KeyD: "right", ArrowRight: "right",
   Space: "jump",
   ShiftLeft: "sprint", ShiftRight: "sprint",
-  ControlLeft: "crouch", KeyC: "crouch"
+  ControlLeft: "crouch", KeyC: "crouch",
+  // Одна кнопка на всё, что делается РУКАМИ и занимает время: заложить бомбу,
+  // снять её. Отдельные клавиши под каждое действие в шутере не нужны — в
+  // любой момент возможно ровно одно из них, и игра сама знает какое.
+  KeyE: "use",
+  // Гранаты: бросок и переключение между осколочной и дымовой.
+  KeyG: "nade", KeyH: "nadeSwap"
 };
 
 export class Controls {

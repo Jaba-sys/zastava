@@ -64,13 +64,11 @@
       <div class="maps-grid" id="maps"></div>
 
       <h2>Режим</h2>
-      <div class="modes">
-        <button class="mode on" data-mode="dm" type="button">
-          <b>Каждый сам за себя</b><i>до 25 убийств или 8 минут</i>
-        </button>
-        <button class="mode" data-mode="team" type="button">
-          <b>Команда на команду</b><i>до 40 убийств, стороны набираются поровну</i>
-        </button>
+      <div class="modes" id="modes"></div>
+
+      <div class="side-pick" id="sidePick" hidden>
+        <span>Сторона</span>
+        <div class="sides" id="sides"></div>
       </div>
 
       <h2>Кого пускаем</h2>
@@ -98,6 +96,14 @@
         нажми на купленный, чтобы поставить его в набор или убрать.
       </p>
       <div class="weapons" id="weapons"></div>
+
+      <h2>Снаряжение</h2>
+      <p class="armory-hint">
+        Гранаты выдаются по одной каждую жизнь — купил один раз и носишь всегда.
+        В бою: <b>G</b> бросить, <b>H</b> сменить.
+      </p>
+      <div class="weapons" id="gear"></div>
+
       <div class="note" id="shopNote"></div>
     </section>
 
@@ -158,6 +164,8 @@
     <span><b>Слева</b> стик движения</span>
     <span><b>Справа</b> обзор пальцем</span>
     <span><b>Огонь</b> большая кнопка</span>
+    <span><b>Граната</b> держать — сменить</span>
+    <span><b>Дело</b> держать на точке</span>
     <span><b>Счёт вверху</b> табло</span>
     <span><b>II</b> пауза и выход</span>
   </footer>
@@ -169,6 +177,9 @@
     <span><b>Пробел</b> прыжок</span>
     <span><b>1 2</b> оружие</span>
     <span><b>R</b> перезарядка</span>
+    <span><b>G</b> граната</span>
+    <span><b>H</b> сменить гранату</span>
+    <span><b>E</b> заложить / разминировать</span>
     <span><b>Tab</b> табло</span>
     <span><b>Enter</b> чат</span>
     <span><b>ПКМ</b> прицел</span>

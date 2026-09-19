@@ -47,9 +47,13 @@ const DEFAULTS = {
   aim:    { corner: "br", dx:  60, dy: 150, size: 68, label: "Прицел" },
   swap:   { corner: "br", dx: 150, dy: 150, size: 68, label: "Ствол" },
   reload: { corner: "br", dx: 228, dy: 150, size: 68, label: "Заряд" },
+  // Граната и «руками» — в левый нижний угол, подальше от огня: бросить
+  // гранату вместо выстрела в перестрелке обиднее всего.
+  nade:   { corner: "bl", dx:  84, dy:  62, size: 62, label: "Граната" },
+  use:    { corner: "bl", dx:  84, dy: 140, size: 62, label: "Заложить" },
   pause:  { corner: "tl", dx:  38, dy:  38, size: 44, label: "Пауза" }
 };
-const ORDER = ["fire", "jump", "crouch", "aim", "swap", "reload", "pause"];
+const ORDER = ["fire", "jump", "crouch", "aim", "swap", "reload", "nade", "use", "pause"];
 
 export function isTouchDevice(){
   return (navigator.maxTouchPoints || 0) > 0
@@ -61,8 +65,10 @@ export function isTouchDevice(){
 function defaultSpot(act){
   const d = DEFAULTS[act];
   const W = Math.max(320, innerWidth), H = Math.max(320, innerHeight);
-  const x = d.corner === "br" ? (W - d.dx) / W : d.dx / W;
-  const y = d.corner === "br" ? (H - d.dy) / H : d.dy / H;
+  const right = d.corner === "br";
+  const bottom = d.corner === "br" || d.corner === "bl";
+  const x = right ? (W - d.dx) / W : d.dx / W;
+  const y = bottom ? (H - d.dy) / H : d.dy / H;
   return { x: clamp01(x), y: clamp01(y), s: 1 };
 }
 
@@ -122,6 +128,8 @@ export class TouchControls {
         <button class="tbtn" data-act="crouch" type="button">Присесть</button>
         <button class="tbtn" data-act="reload" type="button">Заряд</button>
         <button class="tbtn" data-act="swap"   type="button">Ствол</button>
+        <button class="tbtn" data-act="nade"   type="button">Граната</button>
+        <button class="tbtn" data-act="use"    type="button">Заложить</button>
         <button class="tbtn tbtn-pause" data-act="pause" type="button">II</button>
       </div>
 
@@ -197,6 +205,9 @@ export class TouchControls {
         if (act === "aim")    this._toggle(button, "aim");
         if (act === "reload") this.hooks.onReload?.();
         if (act === "swap")   this.hooks.onSwap?.();
+        // «Заложить» надо ДЕРЖАТЬ — это единственное действие с таймером, и
+        // на телефоне оно работает как кнопка огня, а не как нажатие.
+        if (act === "use")    c.keys.use = true;
       };
       const release = event => {
         if (this.editing) return;
@@ -204,7 +215,41 @@ export class TouchControls {
         button.classList.remove("down");
         if (act === "fire") c.firing = false;
         if (act === "jump") c.keys.jump = false;
+        if (act === "use")  c.keys.use = false;
       };
+
+      // «Граната» — единственная кнопка с двумя смыслами: короткое нажатие
+      // бросает, долгое меняет вид. Поэтому бросок висит на ОТПУСКАНИИ, а не
+      // на нажатии: иначе долгое нажатие сначала бросило бы гранату, а потом
+      // предложило выбрать, какую именно.
+      if (act === "nade"){
+        let timer = null, swapped = false;
+        const down = event => {
+          if (this.editing){ this._grab(event, act); return; }
+          event.preventDefault();
+          event.stopPropagation();
+          swapped = false;
+          button.classList.add("down");
+          timer = setTimeout(() => {
+            swapped = true;
+            timer = null;
+            this.hooks.onNadeSwap?.();
+          }, 420);
+        };
+        const up = event => {
+          if (this.editing) return;
+          event.preventDefault();
+          button.classList.remove("down");
+          if (timer){ clearTimeout(timer); timer = null; }
+          if (!swapped) this.hooks.onNade?.();
+        };
+        button.addEventListener("touchstart", down, { passive: false });
+        button.addEventListener("touchend", up, { passive: false });
+        button.addEventListener("touchcancel", up, { passive: false });
+        button.addEventListener("mousedown", down);
+        button.addEventListener("mouseup", up);
+        continue;
+      }
 
       button.addEventListener("touchstart", press, { passive: false });
       button.addEventListener("touchend", release, { passive: false });

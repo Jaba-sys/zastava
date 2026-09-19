@@ -3,6 +3,8 @@
 // сцене: так текст всегда чёткий, читается на любом экране и переводится без
 // перерисовки шрифтов.
 
+import { modeName } from "./modes.js";
+
 const $ = id => document.getElementById(id);
 
 export class Hud {
@@ -36,6 +38,39 @@ export class Hud {
     $("hpBar").classList.toggle("low", value <= 30);
   }
 
+  /**
+   * Полка гранат: сколько осталось и какая полетит следующей.
+   *
+   * Стоит рядом с патронами, а не в отдельном углу: и то и другое — «чем я
+   * могу выстрелить прямо сейчас», и смотреть на это надо одним взглядом.
+   *
+   * Показывать её или нет решает НЕ остаток, а то, куплены ли гранаты вообще
+   * (owns). Разница важная: пока полка пряталась на нуле, человек, бросивший
+   * обе, видел ровно то же, что человек, не купивший ни одной, — пустое место.
+   * И то и другое читается как «гранат у меня нет», хотя в первом случае они
+   * вернутся со следующей жизнью. Теперь пустая ячейка гаснет, но остаётся.
+   */
+  nades(counts, next, owns = (counts.frag || 0) + (counts.smoke || 0) > 0){
+    const box = $("nades");
+    if (!box) return;
+    box.classList.toggle("show", !!owns);
+    // Класс на body: по нему подсказка карты отодвигается ниже полки.
+    document.body.classList.toggle("nades", !!owns);
+    if (!owns){ box.innerHTML = ""; return; }
+    box.innerHTML = `
+      <span class="nade${next === "frag" ? " on" : ""}${counts.frag ? "" : " empty"}">Оск. ${counts.frag || 0}</span>
+      <span class="nade${next === "smoke" ? " on" : ""}${counts.smoke ? "" : " empty"}">Дым ${counts.smoke || 0}</span>`;
+  }
+
+  /** Строка про бомбу: где она и сколько осталось. Пусто — значит режим не тот. */
+  bomb(text, hot){
+    const box = $("bombLine");
+    if (!box) return;
+    box.classList.toggle("show", !!text);
+    box.classList.toggle("hot", !!hot);
+    box.textContent = text || "";
+  }
+
   ammo(arsenal){
     $("weaponName").textContent = arsenal.current.name;
     $("ammoValue").textContent = arsenal.reloading ? "···" : arsenal.inMagazine;
@@ -45,7 +80,10 @@ export class Hud {
   score(mine, goal, mode){
     $("scoreMine").textContent = mine;
     $("scoreGoal").textContent = goal;
-    $("scoreLabel").textContent = mode === "team" ? "счёт команды" : "убийств";
+    // В заминировании на табло не убийства, а выигранные раунды — и подпись
+    // обязана говорить именно это, иначе «4 / 8» читается как счёт по трупам.
+    $("scoreLabel").textContent =
+      mode === "bomb" ? "раундов" : mode === "team" ? "счёт команды" : "убийств";
   }
 
   timer(secondsLeft){
@@ -102,7 +140,7 @@ export class Hud {
         <u>${row.kills}</u><u>${row.deaths}</u>`;
       this.boardRows.append(line);
     }
-    $("boardMode").textContent = mode === "team" ? "Команда на команду" : "Каждый сам за себя";
+    $("boardMode").textContent = modeName(mode);
   }
 
   showBoard(on){ this.board.classList.toggle("show", on); }
@@ -134,7 +172,28 @@ export class Hud {
     this.chatInput.blur();
   }
 
-  say(text){ this.hint.textContent = text; }
+  /**
+   * Подсказка под прицелом.
+   *
+   * Их две, и путать их нельзя. Подсказка КАРТЫ («наверх ведут только три
+   * прореза») висит весь матч — это часть карты. Всё остальное — «код
+   * скопирован», «граната кончилась», «связь вернулась» — сказано на секунду
+   * и должно уйти. Пока обе писались в одну строчку, первое же случайное
+   * сообщение навсегда затирало подсказку карты, и вернуть её было нечем.
+   */
+  setHint(text){
+    this.baseHint = text || "";
+    clearTimeout(this._hintTimer);
+    this.hint.textContent = this.baseHint;
+  }
+
+  say(text, ms = 4000){
+    this.hint.textContent = text;
+    clearTimeout(this._hintTimer);
+    this._hintTimer = setTimeout(() => {
+      this.hint.textContent = this.baseHint || "";
+    }, ms);
+  }
 }
 
 function escape(text){

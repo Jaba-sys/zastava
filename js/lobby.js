@@ -3,11 +3,13 @@
 import { isConfigured, hasRealtimeDb } from "./firebase.js";
 import { resolvePlayer, forgetPlayer } from "./mypeal-auth.js";
 import {
-  ensurePlayer, buyWeapon, setLoadout, setNick, findPlayers, displayName, NICK_MAX
+  ensurePlayer, buyWeapon, buyGear, setLoadout, setNick, findPlayers, displayName, NICK_MAX
 } from "./profile.js";
 import * as friends from "./friends.js";
 import { MAP_LIST } from "./game/maps/index.js";
 import { WEAPONS, WEAPON_ORDER, LOADOUT_SLOTS } from "./game/weapons.js";
+import { GRENADES, GRENADE_ORDER } from "./game/grenades.js";
+import { MODES, MODE_ORDER, SIDES, SIDE_ORDER, isTeamMode, modeName, modeShort } from "./game/modes.js";
 import { MAX_PLAYERS, MYPEAL_ORIGIN } from "./config.js";
 import { wakeSound, playPurchase, playClick, playDenied } from "./game/sound.js";
 import * as net from "./net/live.js";
@@ -23,6 +25,9 @@ let chosenMode = "dm";
 const SIZES = [2, 4, 6, 8, 12, 16];
 let chosenSize = SIZES.includes(MAX_PLAYERS) ? MAX_PLAYERS : 4;
 let chosenPrivate = false;
+// Сторона: пусто — «как получится», иначе «a» или «b». Выбор есть только в
+// командных режимах, в свалке сторон не бывает.
+let chosenSide = "";
 
 // Друзья и присутствие живут подписками: и то и другое меняется само собой,
 // пока человек смотрит на лобби.
@@ -55,6 +60,7 @@ async function boot(){
   $("sRatio").textContent = ratio(profile.kills, profile.deaths);
 
   renderMaps();
+  renderModes();
   renderSizes();
   renderArmory();
   wire();
@@ -128,6 +134,45 @@ function renderSizes(){
   }
 }
 
+/** Режимы и выбор стороны — оба списка рисуются из modes.js, а не из вёрстки. */
+function renderModes(){
+  const box = $("modes");
+  box.innerHTML = "";
+  for (const id of MODE_ORDER){
+    const mode = MODES[id];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "mode" + (id === chosenMode ? " on" : "");
+    button.dataset.mode = id;
+    button.innerHTML = `<b>${mode.name}</b><i>${mode.hint}</i>`;
+    button.onclick = () => { chosenMode = id; playClick(); renderModes(); renderSides(); };
+    box.append(button);
+  }
+  renderSides();
+}
+
+function renderSides(){
+  const wrap = $("sidePick");
+  wrap.hidden = !isTeamMode(chosenMode);
+  if (wrap.hidden){ chosenSide = ""; return; }
+
+  const box = $("sides");
+  box.innerHTML = "";
+  const options = [{ id: "", name: "Как получится", hint: "стороны наберутся поровну" },
+    ...SIDE_ORDER.map(id => ({ id, name: SIDES[id].name, hint: SIDES[id].goal }))];
+
+  for (const option of options){
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "side" + (option.id === chosenSide ? " on" : "") +
+      (option.id ? " side-" + option.id : "");
+    button.dataset.side = option.id || "auto";
+    button.innerHTML = `<b>${option.name}</b><i>${option.hint}</i>`;
+    button.onclick = () => { chosenSide = option.id; playClick(); renderSides(); };
+    box.append(button);
+  }
+}
+
 function wire(){
   $("mainServerBtn").onclick = enterMainServer;
   $("nickBtn").onclick = changeNick;
@@ -136,15 +181,6 @@ function wire(){
   $("findInput").addEventListener("keydown", e => { if (e.key === "Enter") searchPeople(); });
 
   $("privInput").onchange = e => { chosenPrivate = e.target.checked; };
-
-  for (const button of document.querySelectorAll("[data-mode]")){
-    button.onclick = () => {
-      chosenMode = button.dataset.mode;
-      for (const other of document.querySelectorAll("[data-mode]")){
-        other.classList.toggle("on", other === button);
-      }
-    };
-  }
 
   $("createBtn").onclick = createRoom;
   $("joinBtn").onclick = joinByCode;
@@ -222,6 +258,61 @@ function renderArmory(){
       foot.append(state, pick);
     }
     box.append(card);
+  }
+
+  renderGear();
+}
+
+/** Гранаты. Купил один раз — выдаются каждую жизнь, слотов не занимают. */
+function renderGear(){
+  const box = $("gear");
+  box.innerHTML = "";
+
+  for (const id of GRENADE_ORDER){
+    const item = GRENADES[id];
+    const has = me.owned.includes(id);
+
+    const card = document.createElement("div");
+    card.className = "weapon" + (has ? " owned" : "");
+    card.dataset.gear = id;
+    card.innerHTML = `
+      <div class="weapon-head"><b>${item.name}</b></div>
+      <i>${item.about}</i>
+      <div class="weapon-foot"></div>`;
+
+    const foot = card.querySelector(".weapon-foot");
+    if (has){
+      const state = document.createElement("span");
+      state.className = "price owned-mark";
+      state.textContent = "по одной за жизнь";
+      foot.append(state);
+    } else {
+      const price = document.createElement("span");
+      price.className = "price";
+      price.textContent = item.price + " монет";
+      const buy = document.createElement("button");
+      buy.type = "button";
+      buy.className = "btn btn-ghost";
+      buy.textContent = "Купить";
+      buy.disabled = (me.coins ?? 0) < item.price;
+      buy.onclick = () => purchaseGear(id);
+      foot.append(price, buy);
+    }
+    box.append(card);
+  }
+}
+
+async function purchaseGear(id){
+  try {
+    const result = await buyGear(me.uid, me, id);
+    if (!result.ok){ playDenied(); return shopSay(result.reason); }
+    me = { ...me, ...result.player };
+    playPurchase();
+    shopSay(`${GRENADES[id].name} куплена. Выдаётся каждую жизнь.`, "ok");
+    renderArmory();
+  } catch (error){
+    playDenied();
+    shopSay("Не получилось купить: " + error.message);
   }
 }
 
@@ -368,7 +459,7 @@ function personRow(person, kind){
   const at = whereIs(person.uid);
   const online = !!at;
   const place = !at ? "не в игре"
-    : at.room ? `${mapName(at.map)} · ${at.mode === "team" ? "команда" : "каждый сам"}`
+    : at.room ? `${mapName(at.map)} · ${modeShort(at.mode)}`
     : "в лобби";
 
   row.innerHTML = `
@@ -474,7 +565,7 @@ function renderMainServer(){
   const here = presence.filter(row => row.room === net.MAIN_ROOM).length;
   $("mainServerSeats").textContent = `${here} / ${net.MAIN.maxPlayers}`;
   $("mainServerLine").textContent =
-    `Команда на команду · раунд до ${net.MAIN.killsToWin} убийств `
+    `Заминирование · террористы против спецназа `
     + `· каждые ${net.MAIN.mapsPerCycle} раундов новая карта`;
 }
 
@@ -482,7 +573,7 @@ async function enterMainServer(){
   $("mainServerBtn").disabled = true;
   try {
     await net.ensureMainRoom();
-    location.href = `game.html?room=${net.MAIN_ROOM}`;
+    location.href = gameLink(net.MAIN_ROOM);
   } catch (error){
     say("Не получилось зайти на общий: " + error.message);
     $("mainServerBtn").disabled = false;
@@ -512,7 +603,7 @@ async function createRoom(){
     // Матч начинается сразу: ждать в пустой комнате скучнее, чем бегать по
     // карте одному в ожидании, пока подтянутся остальные.
     await net.setRoomState(id, net.ROOM_STATE.LIVE, { startedAt: Date.now() });
-    location.href = `game.html?room=${id}`;
+    location.href = gameLink(id);
   } catch (error){
     say("Не получилось создать комнату: " + error.message);
     $("createBtn").disabled = false;
@@ -544,7 +635,12 @@ async function joinByCode(){
 async function enterRoom(id){
   const check = await net.roomCapacity(id);
   if (!check.ok){ playDenied(); return say(check.reason); }
-  location.href = `game.html?room=${id}`;
+  location.href = gameLink(id);
+}
+
+/** Адрес матча. Сторона едет в нём же — игра прочитает её при входе. */
+function gameLink(id){
+  return `game.html?room=${id}` + (chosenSide ? `&team=${chosenSide}` : "");
 }
 
 function renderRooms(rooms){
@@ -570,7 +666,7 @@ function renderRooms(rooms){
     card.innerHTML = `
       <div>
         <b>${escape(room.hostName || "Боец")}</b>
-        <i>${mapName} · ${room.mode === "team" ? "команда на команду" : "каждый сам за себя"}</i>
+        <i>${mapName} · ${modeName(room.mode).toLowerCase()}</i>
       </div>
       <span class="seats${busy ? " full" : ""}">${room.count || 0}/${max}</span>
       <span class="code">${room.code}</span>

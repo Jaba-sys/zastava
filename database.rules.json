@@ -107,6 +107,20 @@
           }
         },
 
+        // Бомба. Пишет её клиент — тот, кто закладывает или снимает. Проверить
+        // это правилами нельзя: они не знают ни где игрок стоит, ни сколько он
+        // там простоял. Та же честность на доверии, что и с уроном.
+        "bomb": {
+          ".write": "auth != null",
+          ".validate": "!newData.exists() || newData.hasChild('state')",
+          "state": { ".validate": "newData.isString() && newData.val().length <= 10" },
+          "site":  { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+          "at":    { ".validate": "newData.isNumber()" },
+          "x": { ".validate": "newData.isNumber()" },
+          "y": { ".validate": "newData.isNumber()" },
+          "z": { ".validate": "newData.isNumber()" }
+        },
+
         "events": {
           ".write": "auth != null",
           "$event": {

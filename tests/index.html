@@ -41,6 +41,9 @@ import { PLAYER, movePlayer, onGround, raycast } from "../js/game/physics.js";
 import { buildMap } from "../js/game/maps/index.js";
 import { MAIN, mapForRound, isRoundKeeper } from "../js/net/live.js";
 import { WEAPONS, WEAPON_ORDER, Arsenal, damageAt, LOADOUT_SLOTS } from "../js/game/weapons.js";
+import { GRENADES, Grenade, Smoke, fragDamage, smokeBlocks } from "../js/game/grenades.js";
+import { BOMB, MODES, SIDES, SIDE_ORDER, ROUND_END, otherSide, isTeamMode } from "../js/game/modes.js";
+import { BOMB_STATE, siteAt, fuseLeft, bombCarrier } from "../js/game/bomb.js";
 
 const out = document.getElementById("out");
 let failed = 0;
@@ -167,6 +170,127 @@ head("Оружие и набор в бой");
 }
 
 // ---------------------------------------------------------------------------
+// Гранаты
+//
+// Проверяем ровно то, ради чего граната вообще существует. Она должна долететь
+// (и не провалиться сквозь пол на быстром броске), она не должна убивать
+// сквозь стену, и дым должен ДЕЙСТВИТЕЛЬНО закрывать обзор, а не просто
+// красиво висеть.
+// ---------------------------------------------------------------------------
+head("Гранаты");
+
+const V = (x,y,z) => new THREE.Vector3(x,y,z);
+
+{
+  // Бросок в пол на полной скорости. Шажковое движение существует именно для
+  // этого случая: одним рывком за кадр граната пролетела бы сквозь пол.
+  const g = new Grenade({ kind:"frag", from:V(0,1.6,0),
+                          velocity:V(0,-GRENADES.frag.throwSpeed,0), owner:"me" });
+  for (let i = 0; i < 200; i++) g.step(1/60, [floor]);
+  line(g.pos.y >= -0.02, "граната не проваливается сквозь пол",
+       "y = " + g.pos.y.toFixed(2) + " после броска вниз на " + GRENADES.frag.throwSpeed + " м/с");
+  line(Math.abs(g.vel.y) < 1.5, "и успокаивается, а не скачет вечно",
+       "|vy| = " + Math.abs(g.vel.y).toFixed(2));
+}
+{
+  // Глухая стена между броском и стеной: граната остаётся по свою сторону.
+  const wall = box(3, 0, 0, 0.6, 6, 20);
+  const g = new Grenade({ kind:"frag", from:V(0,1.2,0),
+                          velocity:V(GRENADES.frag.throwSpeed, 0, 0), owner:"me" });
+  for (let i = 0; i < 120; i++) g.step(1/60, [floor, wall]);
+  line(g.pos.x < 3, "граната не пролетает сквозь стену", "x = " + g.pos.x.toFixed(2));
+}
+{
+  const R = GRENADES.frag.radius;
+  const near = fragDamage(V(0,1,0), V(1,1,0), [floor]);
+  const mid  = fragDamage(V(0,1,0), V(R * 0.5, 1, 0), [floor]);
+  const edge = fragDamage(V(0,1,0), V(R - 0.3, 1, 0), [floor]);
+  const out  = fragDamage(V(0,1,0), V(R + 2, 1, 0), [floor]);
+  line(near > mid && mid > 0 && out === 0, "урон осколочной падает к краю радиуса",
+       `${near} вплотную → ${mid} на полпути → ${out} за радиусом`);
+  // Падение именно квадратичное: у самой границы граната уже не делает ничего.
+  // Это не придирка — на линейном падении край радиуса ещё снимал бы треть
+  // здоровья, и «отбежал за угол» перестало бы спасать.
+  line(edge <= 2, "у самой границы радиуса граната почти безобидна",
+       `${edge} урона в ${(R - 0.3).toFixed(1)} м`);
+
+  // Та самая стена, ради которой всё и затевалось: за углом от взрыва спасает
+  // угол. Если эта строка покраснела — граната бьёт сквозь бетон.
+  const wall = box(1.5, 0, 0, 0.6, 4, 12);
+  line(fragDamage(V(0,1,0), V(3,1,0), [floor, wall]) === 0,
+       "сквозь стену осколки не достают", "цель в 3 м, стена в 1.5 м");
+}
+{
+  const smoke = new Smoke(V(0,1,0), 0);
+  smoke.update(1, 1);                       // облако поднялось и стоит
+  line(smoke.blocks(V(-9,1.6,0), V(9,1.6,0)), "дым закрывает обзор насквозь",
+       "луч через центр облака");
+  line(!smoke.blocks(V(-9,1.6,14), V(9,1.6,14)), "а мимо облака — не мешает",
+       "луч в 14 м в стороне");
+  line(smokeBlocks([smoke], V(-9,1.6,0), V(9,1.6,0)) &&
+       !smokeBlocks([], V(-9,1.6,0), V(9,1.6,0)), "smokeBlocks считает по всем облакам",
+       "одно облако и ни одного");
+  smoke.update(1, GRENADES.smoke.duration + 1);
+  line(smoke.done && !smoke.blocks(V(-9,1.6,0), V(9,1.6,0)),
+       "дым рассеивается и перестаёт мешать", GRENADES.smoke.duration + " с");
+}
+{
+  line(GRENADES.smoke.damage === 0, "дымовая никому не вредит", "урон 0");
+}
+
+// ---------------------------------------------------------------------------
+// Заминирование
+// ---------------------------------------------------------------------------
+head("Заминирование");
+
+{
+  const sites = [[0, 0, 0], [40, 0, 0]];
+  line(siteAt(V(0,0,0), sites) === 0 && siteAt(V(40,0,0), sites) === 1,
+       "в центре зоны точка определяется", "A и B");
+  line(siteAt(V(BOMB.siteRadius - 0.5, 0, 0), sites) === 0 &&
+       siteAt(V(BOMB.siteRadius + 1, 0, 0), sites) === -1,
+       "у края зоны — можно, за краем — нельзя", "радиус " + BOMB.siteRadius + " м");
+  // Отдельный допуск по высоте: иначе с гребня «Плотины» закладывали бы бомбу
+  // в машинный зал шестнадцатью метрами ниже.
+  line(siteAt(V(0, 9, 0), sites) === -1, "с этажа выше заложить нельзя", "+9 м над точкой");
+}
+{
+  const at = Date.now();
+  const bomb = { state: BOMB_STATE.PLANTED, site: 0, at };
+  line(Math.abs(fuseLeft(bomb, at) - BOMB.fuse) < 0.01, "запал начинает с полного",
+       BOMB.fuse + " с");
+  line(fuseLeft(bomb, at + BOMB.fuse * 1000 + 500) === 0, "и догорает до нуля",
+       "через " + BOMB.fuse + " с");
+  line(fuseLeft({ state: BOMB_STATE.CARRIED }, at) === null,
+       "у неразложенной бомбы запала нет", "null");
+  // Главный баланс режима: снять бомбу должно быть можно, но впритык.
+  line(BOMB.defuseTime < BOMB.fuse, "разминировать успевают, если пришли вовремя",
+       `${BOMB.defuseTime} с на снятие при запале ${BOMB.fuse} с`);
+}
+{
+  const sessions = ["s9", "s2", "s7"];
+  line(bombCarrier(sessions) === "s2" && bombCarrier([...sessions].reverse()) === "s2",
+       "бомбу несёт один и тот же у всех", "порядок списка не важен");
+  line(bombCarrier([]) === null, "в пустой команде нести некому", "null");
+}
+{
+  line(MODES.bomb.respawn === false, "в заминировании не возрождаются", "раунд до конца");
+  line(isTeamMode("bomb") && isTeamMode("team") && !isTeamMode("dm"),
+       "заминирование — командный режим", "у него две стороны");
+  line(SIDE_ORDER.length === 2 && SIDES.a.plants && !SIDES.b.plants,
+       "минируют террористы, снимают спецназ", `${SIDES.a.name} / ${SIDES.b.name}`);
+  line(otherSide("a") === "b" && otherSide("b") === "a", "стороны противоположны", "a ↔ b");
+
+  // Кто выигрывает раунд. Строка про timeout — самая важная: время вышло и
+  // бомба не заложена означает победу СПЕЦНАЗА, а не ничью.
+  line(ROUND_END.exploded.winner === "a" && ROUND_END.defused.winner === "b" &&
+       ROUND_END.timeout.winner === "b" &&
+       ROUND_END.wipedA.winner === "b" && ROUND_END.wipedB.winner === "a",
+       "итоги раунда достаются правильной стороне",
+       "взрыв → Т, снятие → СН, время вышло → СН");
+}
+
+// ---------------------------------------------------------------------------
 // Проходимость карт
 //
 // Карта раскладывается на сетку. В одной точке этажей может быть несколько —
@@ -209,34 +333,41 @@ function reachability(id, range){
     return best === null ? null : { key:`${i},${j}@${best}`, i, j, y:best, delta:bd };
   }
 
-  const start = nodeFor(map.spawns[0].pos);
-  const seen = new Set([start.key]);
-  const queue = [start];
-  while (queue.length){
-    const cur = queue.shift();
-    for (const [di,dj] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const ni = cur.i+di, nj = cur.j+dj;
-      const ls = columns.get(ni+","+nj);
-      if (!ls) continue;
-      const [nx,nz] = at(ni,nj);
-      const boxes = nearby(nx,nz);
-      for (const y of ls){
-        const k = `${ni},${nj}@${y}`;
-        if (seen.has(k)) continue;
-        const up = y - cur.y;
-        if (up > MAX_JUMP_UP || up < -MAX_DROP) continue;
-        const top = Math.max(cur.y, y);
-        if (boxes.some(b => b.max.y > top + 0.06 && b.min.y < top + PLAYER.height)) continue;
-        seen.add(k); queue.push({ key:k, i:ni, j:nj, y });
+  /** Куда можно дойти из точки. Отдельной функцией, потому что спрашиваем мы
+      это дважды: «дойду ли я до бомбы» и «выйду ли я обратно». */
+  function spread(from){
+    const start = nodeFor(from);
+    if (!start) return new Set();
+    const seen = new Set([start.key]);
+    const queue = [start];
+    while (queue.length){
+      const cur = queue.shift();
+      for (const [di,dj] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const ni = cur.i+di, nj = cur.j+dj;
+        const ls = columns.get(ni+","+nj);
+        if (!ls) continue;
+        const [nx,nz] = at(ni,nj);
+        const boxes = nearby(nx,nz);
+        for (const y of ls){
+          const k = `${ni},${nj}@${y}`;
+          if (seen.has(k)) continue;
+          const up = y - cur.y;
+          if (up > MAX_JUMP_UP || up < -MAX_DROP) continue;
+          const top = Math.max(cur.y, y);
+          if (boxes.some(b => b.max.y > top + 0.06 && b.min.y < top + PLAYER.height)) continue;
+          seen.add(k); queue.push({ key:k, i:ni, j:nj, y });
+        }
       }
     }
+    return seen;
   }
-  return { map, seen, nodeFor };
+
+  return { map, seen: spread(map.spawns[0].pos), nodeFor, spread };
 }
 
 for (const [id, range, title] of [["karier", 76, "Карьер"], ["depo", 70, "Депо"], ["teplitsy", 76, "Теплицы"], ["plotina", 70, "Плотина"]]){
   head("Карта «" + title + "»");
-  const { map, seen, nodeFor } = reachability(id, range);
+  const { map, seen, nodeFor, spread } = reachability(id, range);
   map.spawns.forEach((s, n) => {
     const nd = nodeFor(s.pos);
     const standable = nd && nd.delta < 0.6;
@@ -246,6 +377,48 @@ for (const [id, range, title] of [["karier", 76, "Карьер"], ["depo", 70, "
   });
   line(map.teamSpawns?.a?.length > 0 && map.teamSpawns?.b?.length > 0,
        "у обеих команд есть свои точки", `${map.teamSpawns.a.length} и ${map.teamSpawns.b.length}`);
+
+  // --- точки закладки -------------------------------------------------------
+  //
+  // Точка бомбы — это не просто координата на карте: на ней стоят, её держат и
+  // с неё уходят. Поэтому спрашиваем три разные вещи, и каждая ловит свою беду:
+  //
+  //   пол       — точка внутри генератора или в воздухе выглядит нормально в
+  //               коде и невозможна в игре. Ровно это и случилось на «Плотине»:
+  //               центр машинного зала [0, 22] приходился внутрь цилиндра.
+  //   дорога    — до неё должны добегать обе команды, каждая от своих точек.
+  //   выход     — и обратно тоже: яма, из которой не вылезти, формально
+  //               достижима, а на деле это ловушка для целой команды.
+  line(map.sites?.length === 2, "на карте две точки закладки",
+       map.sites ? map.sites.length + " шт." : "нет поля sites");
+
+  (map.sites || []).forEach((pos, n) => {
+    const letter = ["A", "B"][n] || String(n + 1);
+    const nd = nodeFor(pos);
+    const standable = nd && nd.delta < 0.6;
+    line(standable, `точка ${letter} — на полу, а не внутри железа`,
+         `[${pos.join(", ")}] ${standable ? "" : "просвет " + (nd ? nd.delta.toFixed(1) + " м" : "пола нет")}`);
+    if (!standable) return;
+
+    // До точки — от точек возрождения каждой команды.
+    const fromA = (map.teamSpawns?.a || []).some(s => spread(s.pos).has(nd.key));
+    const fromB = (map.teamSpawns?.b || []).some(s => spread(s.pos).has(nd.key));
+    line(fromA && fromB, `точка ${letter} — добегают обе команды`,
+         `${fromA ? "Т ✓" : "Т ОТРЕЗАНЫ"} · ${fromB ? "СН ✓" : "СН ОТРЕЗАНЫ"}`);
+
+    // И обратно: с точки должен быть путь хотя бы к одной точке возрождения.
+    const back = spread(pos);
+    const out = map.spawns.some(s => { const k = nodeFor(s.pos); return k && back.has(k.key); });
+    line(out, `с точки ${letter} есть выход`, out ? "не ловушка" : "ВЫЙТИ НЕЛЬЗЯ");
+  });
+
+  if (map.sites?.length === 2){
+    // Две точки в одном углу — это одна точка. Спецназ должен делиться.
+    const [a, s] = map.sites;
+    const gap = Math.hypot(a[0] - s[0], a[1] - s[1], a[2] - s[2]);
+    line(gap > BOMB.siteRadius * 4, "точки A и B разнесены",
+         gap.toFixed(0) + " м между ними");
+  }
 }
 
 // ---------------------------------------------------------------------------

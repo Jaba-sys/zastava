@@ -32,6 +32,13 @@ import { registerServiceWorker } from "../pwa.js";
 import {
   setupRenderer, dressMap, detailMaterial, readQuality, saveQuality, QUALITY, QUALITY_ORDER
 } from "./render.js";
+import { SIDES, MODES, BOMB, ROUND_END, sideName, otherSide, isTeamMode, modeShort } from "./modes.js";
+import {
+  GRENADES, GRENADE_ORDER, Grenade, Smoke, fragDamage, smokeBlocks, throwVelocity, primeSmoke
+} from "./grenades.js";
+import {
+  BOMB_STATE, buildSite, buildBomb, blink, siteAt, fuseLeft, bombLine, bombCarrier, ActionBar
+} from "./bomb.js";
 
 const MATCH_SECONDS = 8 * 60;
 const GOAL = { dm: 25, team: 40 };
@@ -68,6 +75,20 @@ let stopAnnounce = null;
 let quality = readQuality();
 let presence = [];       // кто сейчас в игре — для панели в паузе
 let roomList = [];       // открытые комнаты — туда можно перейти
+
+// ---- заминирование --------------------------------------------------------
+let bomb = null;            // состояние из базы
+let bombGroup = null;       // ящик в сцене
+let siteGroup = null;       // размеченные точки A и B
+let actionBar = null;       // полоса «закладываю / разминирую»
+let holdFor = 0;            // сколько секунд уже держу кнопку действия
+let roundOver = false;      // раунд кончился, ждём следующего
+let carriesBomb = false;    // бомба у меня
+let nades = { frag: 0, smoke: 0 };   // сколько осталось в этой жизни
+let owned = [];             // что куплено в оружейной
+let flying = [];            // летящие гранаты
+let clouds = [];            // облака дыма
+let nextNade = "frag";      // какую бросаем по кнопке
 const BASE_FOV = 78;
 
 const self = {
@@ -120,10 +141,22 @@ async function start(){
   // в нём оружие, которого уже нет, Arsenal сам подставит автомат.
   arsenal = new Arsenal(profile.loadout);
 
-  // Команду выбираем по чётности числа уже вошедших: так две стороны
-  // наполняются поровну без отдельного распорядителя.
-  if (room.mode === "team"){
-    me.team = (room.count || 0) % 2 === 0 ? "a" : "b";
+  owned = Array.isArray(profile.owned) ? profile.owned : [];
+
+  // Сторона. Человек мог выбрать её в лобби — тогда она приходит в адресе; если
+  // не выбрал, ставим по чётности числа вошедших, чтобы стороны набирались
+  // поровну без отдельного распорядителя.
+  if (isTeamMode(room.mode)){
+    const wanted = params.get("team");
+    me.team = (wanted === "a" || wanted === "b")
+      ? wanted
+      : ((room.count || 0) % 2 === 0 ? "a" : "b");
+  }
+
+  if (room.mode === "bomb"){
+    // Класс на body: по нему интерфейс раздвигается под строку о бомбе.
+    document.body.classList.add("bomb");
+    setupBombMode();
   }
 
   leaveRoom = await net.joinRoom(roomId, me.sessionUid, {
@@ -146,7 +179,7 @@ async function start(){
   refreshBoard();
 
   document.getElementById("loading").classList.add("gone");
-  hud.say(mapMeta(room.map).hint);
+  hud.setHint(mapMeta(room.map).hint);
   hud.banner(mapMeta(room.map).name, mapMeta(room.map).subtitle, 3200);
 
   clock = new THREE.Clock();
@@ -178,6 +211,9 @@ function buildScene(){
   // по устройству.
   setupRenderer(renderer, quality);
   dressMap(renderer, scene, map, quality);
+  // Дым — единственное полупрозрачное в игре, и первая его программа шейдера
+  // собирается в тот самый кадр, когда облако встаёт. Соберём заранее.
+  primeSmoke(renderer, scene, camera);
 
   addEventListener("resize", () => {
     camera.aspect = innerWidth / innerHeight;
@@ -331,7 +367,7 @@ const viewModel = {
 // ---------------------------------------------------------------------------
 
 function spawn(){
-  const points = room.mode === "team" && map.teamSpawns?.[me.team]?.length
+  const points = isTeamMode(room.mode) && map.teamSpawns?.[me.team]?.length
     ? map.teamSpawns[me.team]
     : map.spawns;
 
@@ -343,7 +379,7 @@ function spawn(){
     let nearest = Infinity;
     for (const other of remotes.values()){
       if (other.hp <= 0) continue;
-      if (room.mode === "team" && other.team === me.team) continue;
+      if (isTeamMode(room.mode) && other.team === me.team) continue;
       nearest = Math.min(nearest, here.distanceTo(other.shown));
     }
     const score = nearest === Infinity ? Math.random() * 10 : nearest;
@@ -361,7 +397,140 @@ function spawn(){
   hud.health(self.hp);
   hud.hideBanner();
   playSpawn();
+
+  // Гранаты выдаются НА ЖИЗНЬ, а не на матч: иначе купивший однажды кидал бы
+  // их бесконечно, и всё остальное оружие стало бы не нужно. Куплено — значит
+  // есть по одной в каждом возрождении.
+  nades.frag  = owned.includes("frag")  ? 1 : 0;
+  nades.smoke = owned.includes("smoke") ? 1 : 0;
+  nextNade = nades.frag ? "frag" : "smoke";
+  showNades();
+  refreshCarrier();
+
   net.pushScore(roomId, me.sessionUid, { hp: 100 });
+}
+
+// ---------------------------------------------------------------------------
+// Заминирование
+// ---------------------------------------------------------------------------
+
+/** Разметить точки, собрать бомбу, подписаться на её состояние. */
+function setupBombMode(){
+  actionBar = new ActionBar();
+
+  siteGroup = new THREE.Group();
+  const sites = map.sites || [];
+  sites.forEach((site, i) => siteGroup.add(buildSite(site, i === 1 ? "B" : "A")));
+  scene.add(siteGroup);
+
+  bombGroup = buildBomb();
+  bombGroup.visible = false;
+  scene.add(bombGroup);
+
+  stopWatchers.push(net.watchBomb(roomId, state => {
+    const was = bomb?.state;
+    bomb = state;
+    if (!state) return;
+
+    if (state.state === BOMB_STATE.PLANTED && was !== BOMB_STATE.PLANTED){
+      bombGroup.position.set(state.x, state.y, state.z);
+      bombGroup.visible = true;
+      hud.banner("Бомба заложена", `Точка ${state.site === 1 ? "B" : "A"}`, 2200);
+      playMatchEnd();
+    }
+    if (state.state === BOMB_STATE.DEFUSED && was === BOMB_STATE.PLANTED){
+      endRound("defused");
+    }
+    if (state.state === BOMB_STATE.CARRIED){
+      bombGroup.visible = false;
+    }
+  }));
+}
+
+/** Кто из живых террористов несёт бомбу — считают все одинаково. */
+function refreshCarrier(){
+  if (room?.mode !== "bomb"){ carriesBomb = false; return; }
+  const live = [];
+  if (me.team === "a" && self.alive) live.push(me.sessionUid);
+  for (const [id, r] of remotes) if (r.team === "a" && r.hp > 0) live.push(id);
+  carriesBomb = bombCarrier(live) === me.sessionUid;
+}
+
+/**
+ * Закладка и разминирование — единственное в игре действие, которое ЗАНИМАЕТ
+ * ВРЕМЯ. Кнопку надо держать, и любое движение сбивает: три секунды
+ * неподвижности посреди боя и есть цена бомбы.
+ */
+function stepBombAction(dt){
+  if (room.mode !== "bomb" || !self.alive || roundOver){ actionBar?.hide(); holdFor = 0; return; }
+
+  const moving = Math.hypot(self.vel.x, self.vel.z) > 0.6;
+  const planted = bomb?.state === BOMB_STATE.PLANTED;
+
+  // Что вообще можно делать в этом месте этой стороной.
+  let job = null;
+  if (!planted && me.team === "a" && carriesBomb){
+    const site = siteAt(self.pos, map.sites);
+    if (site >= 0) job = { kind: "plant", site, time: BOMB.plantTime, text: "Закладываю…" };
+  } else if (planted && me.team === "b"){
+    const near = new THREE.Vector3(bomb.x, bomb.y, bomb.z).distanceTo(self.pos);
+    if (near < 2.2) job = { kind: "defuse", time: BOMB.defuseTime, text: "Разминирую…" };
+  }
+
+  if (!job || !controls.keys.use || moving){
+    if (holdFor > 0 && job) hud.say("Держи кнопку и стой на месте.");
+    holdFor = 0;
+    actionBar?.hide();
+    return;
+  }
+
+  holdFor += dt;
+  actionBar?.show(job.text, holdFor / job.time);
+  if (holdFor < job.time) return;
+
+  holdFor = 0;
+  actionBar?.hide();
+
+  if (job.kind === "plant"){
+    const site = map.sites[job.site];
+    net.plantBomb(roomId, {
+      site: job.site, x: site[0], y: site[1], z: site[2],
+      by: me.sessionUid, byName: me.name
+    });
+    localStats.coins = (localStats.coins || 0) + BOMB.coinsPlant;
+    playPurchaseSafe();
+  } else {
+    net.defuseBomb(roomId, { by: me.sessionUid, byName: me.name });
+    localStats.coins = (localStats.coins || 0) + BOMB.coinsDefuse;
+    playPurchaseSafe();
+  }
+}
+
+// Монетный звон у нас лежит в оружейной; в бою он же отмечает удачное дело.
+function playPurchaseSafe(){ try { playKill(); } catch { /* ignore */ } }
+
+/** Тикающая бомба: мигание, обратный отсчёт и взрыв. */
+function stepBomb(dt){
+  if (room.mode !== "bomb" || !bomb) return;
+
+  if (bomb.state === BOMB_STATE.PLANTED){
+    const left = fuseLeft(bomb);
+    blink(bombGroup, left, BOMB.fuse);
+    if (left <= 0 && !roundOver) bombExplodes();
+  }
+}
+
+function bombExplodes(){
+  const center = new THREE.Vector3(bomb.x, bomb.y + 0.5, bomb.z);
+  // Рядом с бомбой не выживает никто — и это правильно: иначе спецназ просто
+  // стоял бы на точке до последней секунды, ничем не рискуя.
+  if (self.alive){
+    const d = center.distanceTo(self.pos);
+    if (d < BOMB.blastRadius) takeDamage(BOMB.blastDamage, null, "Взрыв");
+  }
+  hud.banner("Бомба взорвалась", "", 2200);
+  playMatchEnd();
+  endRound("exploded");
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +565,16 @@ function wireNetwork(){
       // далеко стреляют или уже за спиной.
       playRemoteShot(event.weapon, from.distanceTo(camera.position));
       remotes.get(event.from)?.kick();
+    }
+
+    if (event.type === "nade" && event.from !== me.sessionUid){
+      // Чужой бросок: повторяем его у себя теми же числами. Траектория
+      // получится та же — считать её по сети незачем.
+      spawnNade({
+        kind: event.kind, owner: event.from, team: event.team,
+        from: new THREE.Vector3(event.x, event.y, event.z),
+        velocity: new THREE.Vector3(event.vx, event.vy, event.vz)
+      });
     }
 
     if (event.type === "hit" && event.to === me.sessionUid && self.alive){
@@ -444,6 +623,23 @@ function wireNetwork(){
     if (!meta){ endMatch("Комната закрылась"); return; }
     const wasRound = roundNow;
     room = meta;
+    // Заминирование живёт раундами в ЛЮБОЙ комнате, не только в постоянной:
+    // бомбе надо куда-то возвращаться после взрыва.
+    if (meta.mode === "bomb"){
+      if (!wasRound){ roundNow = meta.round || 1; roundMap = meta.map || null; }
+      else if (meta.round && meta.round !== wasRound) onBombRound(meta);
+      hud.score(roundScore(me.team), BOMB.roundsToWin, "bomb");
+      // Матч кончается счётом раундов — но только в обычной комнате. Общий
+      // сервер работает круглосуточно: досчитав до восьми, он просто начинает
+      // новый счёт, а не выставляет всех в лобби.
+      if (!meta.permanent && !matchOver &&
+          (roundScore("a") >= BOMB.roundsToWin || roundScore("b") >= BOMB.roundsToWin)){
+        const winner = roundScore("a") >= BOMB.roundsToWin ? "a" : "b";
+        endMatch(`Победа: ${sideName(winner)}`);
+      }
+      return;
+    }
+
     if (meta.permanent){
       // Общий сервер не заканчивается — у него меняются раунды.
       if (!wasRound){ roundNow = meta.round || 1; roundMap = meta.map || null; }
@@ -508,12 +704,15 @@ function wireInput(){
   };
 
   const reload = () => { if (arsenal.startReload()) playReloadOut(); };
+
   const swap   = () => { if (arsenal.next()) playSwitch(); };
 
   document.addEventListener("keydown", e => {
     if (controls.blocked) return;
     if (e.code === "Escape"){ openPause(); return; }
     if (e.code === "KeyR") reload();
+    if (e.code === "KeyG") throwNade(nextNade);
+    if (e.code === "KeyH") swapNade();
     if (e.code === "Digit1" && arsenal.select(0)) playSwitch();
     if (e.code === "Digit2" && arsenal.select(1)) playSwitch();
     if (e.code === "Tab"){ e.preventDefault(); hud.showBoard(true); }
@@ -528,6 +727,8 @@ function wireInput(){
   if (isTouchDevice()){
     touch = new TouchControls(controls, {
       onReload: reload, onSwap: swap, onPause: openPause,
+      onNade: () => throwNade(nextNade),
+      onNadeSwap: swapNade,
       // Из настройки кнопок возвращаемся туда же, откуда в неё вошли, — в паузу.
       onEditDone: () => { document.getElementById("start").classList.remove("gone"); openPause(); }
     });
@@ -716,7 +917,7 @@ function renderWhoNow(){
     line.innerHTML = `
       <div>
         <b>${isMain ? "Застава — общий" : escapeHtml(room.hostName || "Боец")}</b>
-        <i>${escapeHtml(mapMeta(room.map).name)} · ${room.mode === "team" ? "команда" : "каждый сам"}</i>
+        <i>${escapeHtml(mapMeta(room.map).name)} · ${modeShort(room.mode)}</i>
       </div>
       <span>${room.live}/${room.maxPlayers || 4}</span>
       <button class="btn btn-ghost tiny" type="button">Перейти</button>`;
@@ -802,16 +1003,32 @@ function frame(){
   stepSteps(dt, speed);
   stepLabels();
   stepRound();
+  stepNades(dt);
+  stepBombAction(dt);
+  stepBomb(dt);
+  stepBombRound();
 
   hud.ammo(arsenal);
   hud.timer(secondsLeft());
+  if (room.mode === "bomb"){
+    const left = fuseLeft(bomb);
+    hud.bomb(bombLine(bomb, carriesBomb), left !== null && left < 12);
+  }
 
   renderer.render(scene, camera);
   viewModel.render(renderer);
 
   // На общем сервере нулевой таймер — это конец РАУНДА, им занимается
   // stepRound; заканчивать матч по нему нельзя, матч там бесконечный.
-  if (!room.permanent && secondsLeft() <= 0 && !matchOver) endMatch("Время вышло");
+  //
+  // В заминировании — то же самое, и по той же причине. Часы там показывают
+  // остаток РАУНДА (а после закладки и вовсе запал), и нулём они кончаются по
+  // несколько раз за матч. Матч в этом режиме кончается счётом, а не временем:
+  // без этой оговорки первый же истёкший раунд объявлял бы «Время вышло» и
+  // выкидывал всех в лобби. Ровно это и случилось на стенде.
+  if (!room.permanent && room.mode !== "bomb" && secondsLeft() <= 0 && !matchOver){
+    endMatch("Время вышло");
+  }
 }
 
 /**
@@ -852,7 +1069,9 @@ function stepLabels(){
 
     // Цели не передаём: нас интересует только, есть ли СТЕНА между нами.
     const hit = raycast(camera.position, labelDir, map.colliders, [], distance - 0.3);
-    remote.setVisible(!hit);
+    // Дым — такая же преграда, как стена. Дым, сквозь который видно имена, —
+    // украшение, а не тактика: ставить его было бы незачем.
+    remote.setVisible(!hit && !smokeBlocks(clouds, camera.position, labelHead));
   }
 }
 
@@ -1008,7 +1227,12 @@ function takeDamage(amount, fromSession, fromName){
   self.alive = false;
   self.hp = 0;
   localStats.deaths++;
-  self.respawnAt = performance.now() / 1000 + RESPAWN_DELAY;
+  // В заминировании убитый ждёт следующего раунда. Уносим точку возрождения в
+  // бесконечность, а не заводим отдельный флаг: stepSelf и так сравнивает
+  // время, и одной ветки меньше.
+  self.respawnAt = MODES[room.mode]?.respawn === false
+    ? Infinity
+    : performance.now() / 1000 + RESPAWN_DELAY;
 
   net.pushScore(roomId, me.sessionUid, { hp: 0, deaths: localStats.deaths });
   net.sendEvent(roomId, {
@@ -1019,13 +1243,268 @@ function takeDamage(amount, fromSession, fromName){
     victimName: me.name
   });
 
+  // Носильщик убит — бомба переходит следующему живому террористу.
+  refreshCarrier();
   playDeath();
-  hud.banner("Вас убил " + (fromName || "никто"), `Возрождение через ${RESPAWN_DELAY} с`, RESPAWN_DELAY * 1000);
+  hud.banner("Вас убил " + (fromName || "никто"),
+    MODES[room.mode]?.respawn === false
+      ? "Ждём конца раунда"
+      : `Возрождение через ${RESPAWN_DELAY} с`,
+    MODES[room.mode]?.respawn === false ? 2600 : RESPAWN_DELAY * 1000);
   controls.firing = false;
   controls.aiming = false;
 }
 
+
+/**
+ * Конец раунда.
+ *
+ * Очко начисляет ВЕДУЩИЙ — тот, чей ключ сессии меньше всех. Если бы это делал
+ * каждый, кто увидел взрыв, счёт рос бы на число живых игроков за раз. Все
+ * остальные просто показывают итог и ждут.
+ */
+function endRound(reasonId){
+  if (roundOver || room.mode !== "bomb") return;
+  roundOver = true;
+
+  const reason = ROUND_END[reasonId] || ROUND_END.timeout;
+  const won = reason.winner === me.team;
+
+  hud.banner(won ? "Раунд выигран" : "Раунд проигран", reason.text, 3000);
+  if (won){
+    localStats.coins = (localStats.coins || 0) + BOMB.coinsRoundWin;
+    playKill();
+  } else playDeath();
+
+  controls.firing = false;
+  actionBar?.hide();
+
+  if (isKeeper()){
+    net.addRoundWin(roomId, reason.winner);
+    // Пауза перед следующим раундом — чтобы успеть прочитать, чем кончилось.
+    setTimeout(() => {
+      net.nextRoundIn(roomId, room, { seconds: BOMB.roundSeconds, winner: reason.winner });
+    }, 4000);
+  }
+}
+
+/** Ведущий раундов: наименьший ключ сессии среди всех, кто в комнате. */
+function isKeeper(){
+  return net.isRoundKeeper(me.sessionUid, [me.sessionUid, ...remotes.keys()]);
+}
+
+/**
+ * Проверка условий конца раунда — то, чего не видно из отдельного события.
+ *
+ * Взрыв и разминирование приходят сами; а вот «время вышло» и «сторона
+ * уничтожена» надо заметить. Смотрит только ведущий, раз в полсекунды: если бы
+ * смотрели все, каждый начал бы свой раунд.
+ */
+let roundCheck = 0;
+function stepBombRound(){
+  if (room.mode !== "bomb" || roundOver || matchOver) return;
+  const now = performance.now();
+  if (now - roundCheck < 500) return;
+  roundCheck = now;
+  if (!isKeeper()) return;
+
+  const planted = bomb?.state === BOMB_STATE.PLANTED;
+  const alive = { a: 0, b: 0 };
+  if (self.alive) alive[me.team] = (alive[me.team] || 0) + 1;
+  for (const r of remotes.values()) if (r.hp > 0) alive[r.team] = (alive[r.team] || 0) + 1;
+
+  // Сторону считаем уничтоженной, только если в ней вообще КТО-ТО был: в
+  // пустой комнате иначе раунды крутились бы сами собой без единого игрока.
+  const had = { a: 0, b: 0 };
+  had[me.team] = 1;
+  for (const r of remotes.values()) had[r.team] = 1;
+
+  if (had.a && !alive.a && !planted) return endRound("wipedA");
+  if (had.b && !alive.b) return endRound("wipedB");
+  // Заложенная бомба переживает своих: даже если террористов не осталось,
+  // раунд идёт, пока она тикает, — спецназ обязан прийти и снять её.
+  if (had.a && !alive.a && planted) return;
+
+  if (!planted && Date.now() > (room.roundEnds || 0)) endRound("timeout");
+}
+
+// ---------------------------------------------------------------------------
+// Гранаты
+// ---------------------------------------------------------------------------
+
+/**
+ * Бросок.
+ *
+ * По сети уходит ОДНО событие: откуда, с какой скоростью и какая. Траекторию
+ * каждый считает у себя по одинаковым числам — гонять двенадцать пакетов в
+ * секунду на каждую летящую гранату и дорого, и не нужно.
+ */
+/**
+ * Полка гранат на экране.
+ *
+ * Третьим доводом уходит «куплены ли гранаты вообще»: пустая ячейка должна
+ * гаснуть, но оставаться на месте. Без этого полка пропадала на нуле, и
+ * бросивший обе гранаты видел то же, что не купивший ни одной.
+ */
+function showNades(){
+  hud.nades?.(nades, nextNade, owned.includes("frag") || owned.includes("smoke"));
+}
+
+/** Переключить, какую гранату бросаем следующей. */
+function swapNade(){
+  nextNade = nextNade === "frag" ? "smoke" : "frag";
+  showNades();
+  playClick();
+}
+
+function throwNade(kind){
+  if (!self.alive) return;
+  if (!nades[kind]){
+    // Молчаливый отказ читается как «кнопка не работает». Лучше сказать.
+    hud.say(`${GRENADES[kind]?.name || "Граната"} кончилась — будет со следующей жизнью.`);
+    return;
+  }
+  nades[kind]--;
+  showNades();
+
+  const from = camera.position.clone().addScaledVector(
+    camera.getWorldDirection(new THREE.Vector3()), 0.5);
+  // К броску добавляется своя скорость: на бегу граната летит дальше, и это
+  // ровно то, чего человек ждёт.
+  const velocity = throwVelocity(camera, kind, Math.hypot(self.vel.x, self.vel.z) * 0.35);
+
+  spawnNade({ kind, from, velocity, owner: me.sessionUid, team: me.team });
+  net.sendEvent(roomId, {
+    type: "nade", kind, from: me.sessionUid, team: me.team,
+    x: round(from.x), y: round(from.y), z: round(from.z),
+    vx: round(velocity.x), vy: round(velocity.y), vz: round(velocity.z)
+  });
+  playSwitch();
+}
+
+function spawnNade(opts){
+  const nade = new Grenade(opts);
+  scene.add(nade.mesh);
+  flying.push(nade);
+}
+
+function stepNades(dt){
+  const now = performance.now() / 1000;
+
+  for (let i = flying.length - 1; i >= 0; i--){
+    const nade = flying[i];
+    if (!nade.step(dt, map.colliders)) continue;
+
+    if (nade.kind === "smoke"){
+      const cloud = new Smoke(nade.pos, now);
+      scene.add(cloud.group);
+      clouds.push(cloud);
+      playReloadOut();
+    } else {
+      explodeFrag(nade);
+    }
+    nade.dispose(scene);
+    flying.splice(i, 1);
+  }
+
+  for (let i = clouds.length - 1; i >= 0; i--){
+    clouds[i].update(dt, now);
+    if (clouds[i].done){ clouds[i].dispose(scene); clouds.splice(i, 1); }
+  }
+}
+
+/**
+ * Взрыв осколочной.
+ *
+ * Урон себе считаем всегда — своя же граната бьёт своего, и это не
+ * недоработка: иначе её кидали бы себе под ноги в упор. По чужим считает
+ * ХОЗЯИН броска и сообщает жертве, как и с выстрелом: у здоровья один хозяин,
+ * и второго быть не должно.
+ */
+function explodeFrag(nade){
+  flash(nade.pos, 0xffb257, 0.35);
+  playRemoteShot("lmg", nade.pos.distanceTo(camera.position));
+
+  if (self.alive){
+    const eye = self.pos.clone().setY(self.pos.y + PLAYER.eye * 0.6);
+    const damage = fragDamage(nade.pos, eye, map.colliders);
+    if (damage > 0){
+      const byMe = nade.owner === me.sessionUid;
+      takeDamage(damage, byMe ? null : nade.owner, byMe ? "Своя граната" : "Граната");
+    }
+  }
+
+  if (nade.owner !== me.sessionUid) return;
+
+  for (const [id, remote] of remotes){
+    if (remote.hp <= 0) continue;
+    const eye = remote.shown.clone().setY(remote.shown.y + PLAYER.eye * 0.6);
+    const damage = fragDamage(nade.pos, eye, map.colliders);
+    if (damage <= 0) continue;
+    net.sendEvent(roomId, {
+      type: "hit", to: id, from: me.sessionUid,
+      byName: me.name, dmg: damage, weapon: "frag"
+    });
+  }
+}
+
+/** Короткая вспышка на месте взрыва — чтобы его было видно, а не только слышно. */
+function flash(at, color, seconds){
+  const light = new THREE.PointLight(color, 1200, 26, 2);
+  light.position.copy(at);
+  scene.add(light);
+  const born = performance.now();
+  const tick = () => {
+    const k = 1 - (performance.now() - born) / (seconds * 1000);
+    if (k <= 0){ scene.remove(light); return; }
+    light.intensity = 1200 * k * k;
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+
+/**
+ * Начался новый раунд заминирования.
+ *
+ * Все живут заново, счёт раунда обнулён, бомба снова на руках. Если вместе с
+ * раундом сменилась карта (общий сервер), перезагружаемся — по той же причине,
+ * что и в командном режиме: разбирать собранную сцену по частям надёжнее не
+ * получается.
+ */
+function onBombRound(meta){
+  const mapChanged = meta.map && roundMap && meta.map !== roundMap;
+  roundNow = meta.round;
+  roundMap = meta.map || roundMap;
+
+  if (mapChanged){
+    hud.banner(mapMeta(meta.map).name, `Раунд ${meta.round} — меняем карту`, 3000);
+    setTimeout(() => { location.href = `game.html?room=${roomId}&team=${me.team}`; }, 3200);
+    return;
+  }
+
+  roundOver = false;
+  holdFor = 0;
+  bombGroup.visible = false;
+  // Дым и гранаты прошлого раунда не переносятся: иначе новый раунд начинался
+  // бы в чужом дыму, который никто не ставил.
+  for (const nade of flying) nade.dispose(scene);
+  for (const cloud of clouds) cloud.dispose(scene);
+  flying = []; clouds = [];
+
+  self.respawnAt = 0;
+  spawn();
+  refreshCarrier();
+  hud.banner(`Раунд ${meta.round}`, carriesBomb ? "Бомба у тебя" : SIDES[me.team]?.goal || "", 2600);
+}
+
 function checkGoal(){
+  // В заминировании на табло не убийства, а ВЫИГРАННЫЕ РАУНДЫ: они и решают
+  // матч, а личный счёт виден по Tab.
+  if (room.mode === "bomb"){
+    hud.score(roundScore(me.team), BOMB.roundsToWin, "bomb");
+    return;
+  }
   // Общий сервер живёт раундами: цель — счёт КОМАНДЫ за раунд, он же лежит в
   // meta и одинаков у всех. Здесь только показываем: начисляет обработчик
   // убийства, потому что сюда заходят ещё и по обновлению табло.
@@ -1070,6 +1549,11 @@ function roundScore(team){
 let roundCheckedAt = 0;
 function stepRound(){
   if (!room?.permanent || matchOver || leaving) return;
+  // Заминирование крутит свои раунды само (stepBombRound + endRound): там
+  // раунд кончается взрывом, снятием или уничтожением стороны, а не счётом
+  // убийств. Если пустить сюда и его, раунд переключался бы дважды — один раз
+  // по бомбе, второй по этому таймеру, и бомба пропадала бы на полуслове.
+  if (room.mode === "bomb") return;
 
   const now = Date.now();
   if (now - roundCheckedAt < 2000) return;
@@ -1129,6 +1613,13 @@ function teamScore(team){
 }
 
 function secondsLeft(){
+  // В заминировании после закладки часы показывают ЗАПАЛ, а не остаток раунда:
+  // с этой секунды время раунда никого не интересует, а до взрыва — всех.
+  if (room.mode === "bomb"){
+    const fuse = fuseLeft(bomb);
+    if (fuse !== null) return fuse;
+    return ((room.roundEnds || Date.now()) - Date.now()) / 1000;
+  }
   // На общем сервере матч не кончается никогда — кончается РАУНД, и его конец
   // записан в meta.roundEnds. Считать от начала матча тут нечего: он идёт
   // круглосуточно.
@@ -1218,4 +1709,10 @@ function refreshBoard(){
   }
   hud.scoreboard(rows, room.mode);
   checkGoal();
+  // Кто несёт бомбу, зависит от того, КТО ЖИВ: ушёл прежний носильщик — бомба
+  // переходит следующему. Считаем здесь, потому что сюда сходятся все поводы
+  // для пересчёта — вход, выход, смерть, обновление счёта. Раньше это делалось
+  // только на смене раунда, и в САМОМ ПЕРВОМ раунде бомбы не было ни у кого:
+  // закладывать её было некому, и раунд всегда кончался по времени.
+  refreshCarrier();
 }

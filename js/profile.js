@@ -22,6 +22,7 @@ import {
 import {
   WEAPONS, STARTER_OWNED, DEFAULT_LOADOUT, LOADOUT_SLOTS
 } from "./game/weapons.js";
+import { GRENADES } from "./game/grenades.js";
 
 const ref = uid => doc(db, "gamePlayers", uid);
 
@@ -198,6 +199,33 @@ export async function buyWeapon(uid, player, weaponId){
   return {
     ok: true,
     player: { ...player, coins: player.coins - weapon.price, owned: [...player.owned, weaponId] }
+  };
+}
+
+/**
+ * Покупка снаряжения — гранат.
+ *
+ * Лежат в том же списке owned, что и оружие, и это не лень: с точки зрения
+ * игры «что у меня куплено» — один список, и правила базы проверяют его одним
+ * правилом. Разница только в том, что оружие берут в слоты, а гранаты просто
+ * выдаются каждую жизнь, если куплены.
+ */
+export async function buyGear(uid, player, id){
+  const item = GRENADES[id];
+  if (!item) return { ok: false, reason: "Такого снаряжения нет." };
+  if (player.owned.includes(id)) return { ok: false, reason: "Уже куплено." };
+  if ((player.coins || 0) < item.price){
+    return { ok: false, reason: `Не хватает ${item.price - (player.coins || 0)} монет.` };
+  }
+
+  await updateDoc(ref(uid), {
+    coins: increment(-item.price),
+    owned: arrayUnion(id)
+  });
+
+  return {
+    ok: true,
+    player: { ...player, coins: player.coins - item.price, owned: [...player.owned, id] }
   };
 }
 

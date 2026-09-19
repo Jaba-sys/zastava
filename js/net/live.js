@@ -17,6 +17,10 @@
 // полем внутри.
 
 import { rtdb } from "../firebase.js";
+// Длины раундов и запала живут в modes.js — одним списком на всю игру. Держать
+// здесь свою копию числа уже однажды вышло боком: «135» стояло в двух местах,
+// и поправить оба разом никто бы не вспомнил.
+import { BOMB } from "../game/modes.js";
 import {
   ref, push, set, update, remove, onValue, onChildAdded, onChildRemoved,
   onDisconnect, serverTimestamp, query, limitToLast, get
@@ -55,9 +59,12 @@ export const MAIN_ROOM = "main";
 export const MAIN = {
   id: MAIN_ROOM,
   name: "Застава — общий",
-  mode: "team",
+  // Общий сервер играет в заминирование: у режима есть начало и конец раунда,
+  // а значит, зашедший в любую минуту попадает не в середину чужой бесконечной
+  // перестрелки, а в понятную ситуацию — «идёт раунд, бомба ещё не заложена».
+  mode: "bomb",
   maxPlayers: 16,
-  killsToWin: 15,          // сколько убийств набирает команда за раунд
+  killsToWin: 15,          // для командного боя: сколько убийств за раунд
   roundSeconds: 360,       // ...или шесть минут, что раньше
   mapsPerCycle: 5,         // каждые пять раундов — новая карта
   maps: ["karier", "depo", "teplitsy", "plotina"]
@@ -152,6 +159,16 @@ export async function createRoom({ map, mode, hostUid, hostSession, hostName, ma
     beat: Date.now(),
     count: 0
   };
+  // Заминирование живёт раундами, и первый раунд надо завести прямо здесь.
+  // Без round и roundEnds комната рождается с «временем раунда = 0», и первая
+  // же проверка объявляет, что время вышло, — раунд кончается, не начавшись.
+  if (mode === "bomb"){
+    meta.round = 1;
+    meta.roundStart = Date.now();
+    meta.roundEnds = Date.now() + BOMB.roundSeconds * 1000;
+    meta.scoreA = 0;
+    meta.scoreB = 0;
+  }
   await set(ref(rtdb, `rooms/${id}/meta`), meta);
   await set(ref(rtdb, `roomIndex/${id}`), meta);
   return { id, code, meta };
@@ -529,7 +546,9 @@ export async function ensureMainRoom(){
     permanent: true,
     state: ROOM_STATE.LIVE,
     round: 1,
-    roundEnds: Date.now() + MAIN.roundSeconds * 1000,
+    // Длина раунда зависит от режима: в заминировании она своя и короткая.
+    roundEnds: Date.now() + (MAIN.mode === "bomb" ? BOMB.roundSeconds : MAIN.roundSeconds) * 1000,
+    roundStart: Date.now(),
     scoreA: 0,
     scoreB: 0,
     createdAt: Date.now(),
@@ -538,6 +557,7 @@ export async function ensureMainRoom(){
   };
   await set(metaRef, meta).catch(() => {});
   await set(ref(rtdb, `roomIndex/${MAIN_ROOM}`), meta).catch(() => {});
+  await resetBomb(MAIN_ROOM);
   return meta;
 }
 
@@ -587,4 +607,81 @@ export function isRoundKeeper(sessionUid, sessions){
   let best = sessions[0];
   for (const s of sessions) if (s < best) best = s;
   return best === sessionUid;
+}
+
+// ---------------------------------------------------------------------------
+// Заминирование: бомба
+// ---------------------------------------------------------------------------
+//
+// Состояние бомбы лежит в базе, а не у каждого в голове, потому что на него
+// смотрят все сразу и разойтись во мнениях тут нельзя: заложена или нет, на
+// какой точке, когда рванёт. Пишет его клиент — как и урон; своего сервера у
+// игры нет, и это та же честность на доверии (см. README).
+
+export function watchBomb(roomId, callback){
+  return onValue(ref(rtdb, `rooms/${roomId}/bomb`), snap => callback(snap.val()));
+}
+
+/** Заложить: с этой секунды запал и тикает у всех одинаково. */
+export function plantBomb(roomId, { site, x, y, z, by, byName }){
+  return set(ref(rtdb, `rooms/${roomId}/bomb`), {
+    state: "planted", site, x, y, z, by, byName: byName || null, at: Date.now()
+  }).catch(() => {});
+}
+
+export function defuseBomb(roomId, { by, byName }){
+  return update(ref(rtdb, `rooms/${roomId}/bomb`), {
+    state: "defused", defusedBy: by, defusedName: byName || null, defusedAt: Date.now()
+  }).catch(() => {});
+}
+
+export function explodeBomb(roomId){
+  return update(ref(rtdb, `rooms/${roomId}/bomb`), {
+    state: "exploded", explodedAt: Date.now()
+  }).catch(() => {});
+}
+
+/** Новый раунд — бомба снова на руках. Зовёт ведущий вместе с nextRound. */
+export function resetBomb(roomId){
+  return set(ref(rtdb, `rooms/${roomId}/bomb`), {
+    state: "carried", at: Date.now()
+  }).catch(() => {});
+}
+
+/**
+ * Следующий раунд в любой комнате, а не только на общем сервере.
+ *
+ * Раньше раунды были свойством постоянной комнаты. С заминированием они стали
+ * свойством РЕЖИМА: обычная комната в этом режиме тоже живёт раундами, иначе
+ * бомбу некуда было бы возвращать после взрыва.
+ */
+export async function nextRoundIn(roomId, meta, { seconds, winner }){
+  const round = (meta.round || 1) + 1;
+  const patch = {
+    round,
+    roundEnds: Date.now() + seconds * 1000,
+    roundStart: Date.now(),
+    lastWinner: winner || null,
+    state: ROOM_STATE.LIVE
+  };
+  // На общем сервере карта меняется по расписанию; в обычной комнате остаётся
+  // та, которую выбрал создатель.
+  if (roomId === MAIN_ROOM) patch.map = mapForRound(round);
+
+  await Promise.all([
+    update(ref(rtdb, `rooms/${roomId}/meta`), patch).catch(() => {}),
+    update(ref(rtdb, `roomIndex/${roomId}`), patch).catch(() => {})
+  ]);
+  await resetBomb(roomId);
+  return patch;
+}
+
+/** Победа в раунде: очко стороне. */
+export function addRoundWin(roomId, team){
+  const field = team === "b" ? "scoreB" : "scoreA";
+  return get(ref(rtdb, `rooms/${roomId}/meta/${field}`))
+    .then(snap => update(ref(rtdb, `rooms/${roomId}/meta`), {
+      [field]: (Number(snap.val()) || 0) + 1
+    }))
+    .catch(() => {});
 }
