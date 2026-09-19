@@ -2,90 +2,86 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Застава — вход</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Застава переехала</title>
+<!--
+  Переадресация со старого адреса.
 
-<link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#0e1113">
-<meta name="description" content="Браузерный онлайновый шутер от первого лица. Четыре карты, вход через MyPeal.">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Застава">
-<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  «Застава» жила на GitHub Pages по адресу jaba-sys.github.io/zastava/ и
+  переехала на zastava.web.app. Старый адрес остаётся рабочим — но теперь он
+  только провожает: у людей сохранены ссылки, у кого-то игра стоит на телефоне
+  как приложение, и обрывать это нельзя.
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap&subset=cyrillic,latin" rel="stylesheet">
+  Страница делает три вещи, и третья — самая важная.
 
-<link rel="stylesheet" href="css/base.css">
-<link rel="stylesheet" href="css/auth.css">
+  1. Складывает новый адрес из старого пути: /zastava/game.html?room=ABCDE
+     превращается в zastava.web.app/game.html?room=ABCDE. Ссылка «Зайти» к
+     другу продолжает работать.
+
+  2. Снимает служебного работника ИМЕННО ЭТОЙ игры и стирает её кэш. Без этого
+     переезд не состоится вовсе: старый работник отдаёт страницы из кэша раньше
+     сети, и человек ещё месяцами открывал бы старую игру, не зная, что вышла
+     новая. Обратите внимание на отбор по scope и по имени кэша — на
+     jaba-sys.github.io живут и другие проекты, и снести их работников и кэши
+     заодно было бы свинством.
+
+  3. Уходит через полторы секунды в любом случае. Уборка — дело полезное, но
+     ждать её человек не обязан: не вышло сейчас — выйдет в следующий заход.
+-->
+<style>
+  html,body{height:100%}
+  body{
+    margin:0; display:grid; place-content:center; gap:14px; text-align:center;
+    background:#0e1113; color:#ece7db; padding:24px;
+    font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  b{font-size:22px; font-weight:600; letter-spacing:.04em}
+  span{color:rgba(236,231,219,.55); font-size:14px}
+  a{color:#e8a317}
+</style>
 </head>
 <body>
 
-<div class="shell">
+<b>«Застава» переехала</b>
+<span>Новый адрес — <a id="go" href="https://zastava.web.app/">zastava.web.app</a></span>
 
-  <section class="brand">
-    <h1 class="mark">Застава
-      <span>Браузерный шутер. Заходишь своим аккаунтом MyPeal, стреляешь, забираешь очки.</span>
-    </h1>
+<script>
+(function () {
+  var TARGET = "https://zastava.web.app";
 
-    <div class="maps">
-      <div class="map">
-        <span class="map-art karier"></span>
-        <b>Карьер</b><i>три уступа, конвейерный мост, длинные линии</i>
-      </div>
-      <div class="map">
-        <span class="map-art depo"></span>
-        <b>Депо</b><i>ночь, вагоны, поворотный круг в центре</i>
-      </div>
-      <div class="map">
-        <span class="map-art teplitsy"></span>
-        <b>Теплицы</b><i>утро, стекло и гряды: тебя видно насквозь</i>
-      </div>
-      <div class="map">
-        <span class="map-art plotina"></span>
-        <b>Плотина</b><i>гребень, три уступа и машинный зал внизу</i>
-      </div>
-    </div>
+  // Путь без /zastava в начале плюс всё, что было после него.
+  var rest = location.pathname.replace(/^\/zastava(\/|$)/, "/");
+  var url = TARGET + (rest === "/" ? "/" : rest) + location.search + location.hash;
+  document.getElementById("go").href = url;
 
-    <p class="roster">
-      От двух до шестнадцати игроков в матче — сколько пускать, решает тот, кто
-      создал комнату. Очки, убийства и монеты привязаны к аккаунту мессенджера.
-    </p>
-  </section>
+  var went = false;
+  function go() {
+    if (went) return;
+    went = true;
+    location.replace(url);
+  }
+  // Ждать уборку дольше полутора секунд незачем.
+  setTimeout(go, 1500);
 
-  <section class="gate" id="gate">
-    <h2 class="gate-title">Вход</h2>
-    <p class="gate-sub">
-      Отдельного пароля у игры нет. Нажми кнопку — откроется MyPeal, там ты
-      войдёшь или зарегистрируешься как обычно, и вернёшься сюда уже бойцом.
-    </p>
-
-    <button class="btn btn-main" id="enterBtn" type="button">Войти через MyPeal</button>
-    <button class="link" id="aboutBtn" type="button">Открыть мессенджер</button>
-
-    <div class="note" id="note"></div>
-
-    <button class="btn btn-ghost install-btn" id="installBtn" type="button" hidden>
-      Установить на телефон
-    </button>
-    <a class="link" href="install.html">Как играть с телефона как в приложение</a>
-
-    <p class="fineprint">
-      Игра получит только имя и тег из твоего профиля. Переписку она не видит.
-    </p>
-  </section>
-
-  <div class="setup" id="setup">
-    <b>Осталось вписать ключи Firebase.</b><br>
-    Открой <code>js/config.js</code> и вставь туда объект <code>firebaseConfig</code>
-    проекта мессенджера, а также адрес Realtime Database.
-  </div>
-
-</div>
-
-<script type="module" src="js/auth-screen.js"></script>
+  (async function () {
+    try {
+      if (navigator.serviceWorker) {
+        var regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs
+          .filter(function (r) { return (r.scope || "").indexOf("/zastava/") !== -1; })
+          .map(function (r) { return r.unregister(); }));
+      }
+      if (window.caches) {
+        var names = await caches.keys();
+        await Promise.all(names
+          .filter(function (n) { return n.indexOf("zastava") === 0; })
+          .map(function (n) { return caches.delete(n); }));
+      }
+    } catch (e) { /* не вышло — уйдём и так */ }
+    go();
+  })();
+})();
+</script>
 </body>
 </html>

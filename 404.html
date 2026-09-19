@@ -1,2 +1,87 @@
-<h1>ERROR 404</h1>
-<h1><a href="mypeal.web.app">Main (messenger)</a></h1>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Застава переехала</title>
+<!--
+  Переадресация со старого адреса.
+
+  «Застава» жила на GitHub Pages по адресу jaba-sys.github.io/zastava/ и
+  переехала на zastava.web.app. Старый адрес остаётся рабочим — но теперь он
+  только провожает: у людей сохранены ссылки, у кого-то игра стоит на телефоне
+  как приложение, и обрывать это нельзя.
+
+  Страница делает три вещи, и третья — самая важная.
+
+  1. Складывает новый адрес из старого пути: /zastava/game.html?room=ABCDE
+     превращается в zastava.web.app/game.html?room=ABCDE. Ссылка «Зайти» к
+     другу продолжает работать.
+
+  2. Снимает служебного работника ИМЕННО ЭТОЙ игры и стирает её кэш. Без этого
+     переезд не состоится вовсе: старый работник отдаёт страницы из кэша раньше
+     сети, и человек ещё месяцами открывал бы старую игру, не зная, что вышла
+     новая. Обратите внимание на отбор по scope и по имени кэша — на
+     jaba-sys.github.io живут и другие проекты, и снести их работников и кэши
+     заодно было бы свинством.
+
+  3. Уходит через полторы секунды в любом случае. Уборка — дело полезное, но
+     ждать её человек не обязан: не вышло сейчас — выйдет в следующий заход.
+-->
+<style>
+  html,body{height:100%}
+  body{
+    margin:0; display:grid; place-content:center; gap:14px; text-align:center;
+    background:#0e1113; color:#ece7db; padding:24px;
+    font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  b{font-size:22px; font-weight:600; letter-spacing:.04em}
+  span{color:rgba(236,231,219,.55); font-size:14px}
+  a{color:#e8a317}
+</style>
+</head>
+<body>
+
+<b>«Застава» переехала</b>
+<span>Новый адрес — <a id="go" href="https://zastava.web.app/">zastava.web.app</a></span>
+
+<script>
+(function () {
+  var TARGET = "https://zastava.web.app";
+
+  // Путь без /zastava в начале плюс всё, что было после него.
+  var rest = location.pathname.replace(/^\/zastava(\/|$)/, "/");
+  var url = TARGET + (rest === "/" ? "/" : rest) + location.search + location.hash;
+  document.getElementById("go").href = url;
+
+  var went = false;
+  function go() {
+    if (went) return;
+    went = true;
+    location.replace(url);
+  }
+  // Ждать уборку дольше полутора секунд незачем.
+  setTimeout(go, 1500);
+
+  (async function () {
+    try {
+      if (navigator.serviceWorker) {
+        var regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs
+          .filter(function (r) { return (r.scope || "").indexOf("/zastava/") !== -1; })
+          .map(function (r) { return r.unregister(); }));
+      }
+      if (window.caches) {
+        var names = await caches.keys();
+        await Promise.all(names
+          .filter(function (n) { return n.indexOf("zastava") === 0; })
+          .map(function (n) { return caches.delete(n); }));
+      }
+    } catch (e) { /* не вышло — уйдём и так */ }
+    go();
+  })();
+})();
+</script>
+</body>
+</html>

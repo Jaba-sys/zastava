@@ -1,0 +1,63 @@
+{
+  "//": [
+    "Настройка заливки игры на Firebase Hosting.",
+    "",
+    "Проект тут ТОТ ЖЕ, что у мессенджера (mymessage-73c49), и это не ошибка.",
+    "Ключи, вход и база у игры общие с MyPeal — см. js/config.js. Внутри одного",
+    "проекта Hosting умеет держать несколько сайтов: mypeal.web.app — мессенджер,",
+    "zastava.web.app — игра. Поэтому здесь указана ЦЕЛЬ (target), а не просто",
+    "'hosting': без неё firebase не знает, в какой из двух сайтов лить, и",
+    "справедливо отказывается угадывать.",
+    "",
+    "Заливать всегда так:  firebase deploy --only hosting:zastava",
+    "Без --only команда попробует тронуть ещё и правила базы, а они живут",
+    "и публикуются отдельно.",
+    "",
+    "Папка docs/ НЕ попадает на сайт: в ней лежит переадресация со старого",
+    "адреса на GitHub Pages, и на новом сайте она означала бы бесконечный круг."
+  ],
+  "hosting": {
+    "target": "zastava",
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      ".firebaserc",
+      "**/.*",
+      "**/node_modules/**",
+      "docs/**",
+      "README.md",
+      "database.rules.json"
+    ],
+    "headers": [
+      {
+        "//": "Служебного работника нельзя кэшировать: браузер сверяется с ним при каждом заходе, и закэшированный старый работник намертво удержит старую версию игры.",
+        "source": "/sw.js",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        ]
+      },
+      {
+        "//": "Firebase отдаёт .webmanifest как обычный файл, и тогда браузер не считает игру устанавливаемой. Тип приходится назвать самому.",
+        "source": "/manifest.webmanifest",
+        "headers": [
+          { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" },
+          { "key": "Cache-Control", "value": "public, max-age=3600" }
+        ]
+      },
+      {
+        "//": "Страницы могут меняться с каждой заливкой — их держим свежими, а кэшированием занимается сам служебный работник.",
+        "source": "**/*.@(html|js|css)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+        ]
+      },
+      {
+        "//": "Значки не меняются годами.",
+        "source": "/icons/**",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=604800" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "mymessage-73c49"
+  },
+  "targets": {
+    "mymessage-73c49": {
+      "hosting": {
+        "zastava": ["zastava"]
+      }
+    }
+  }
+}

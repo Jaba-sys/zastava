@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Застава — на телефон</title>
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1113">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Застава">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap&subset=cyrillic,latin" rel="stylesheet">
+
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/install.css">
+</head>
+<body>
+
+<div class="install-shell">
+
+  <header class="install-top">
+    <img src="icons/icon-192.png" alt="" width="64" height="64">
+    <div>
+      <h1>Застава на телефоне</h1>
+      <p>
+        Отдельного приложения в магазинах нет и не нужно: игра ставится прямо из
+        браузера. После установки она открывается со своего значка, во весь
+        экран, без адресной строки — и запускается быстрее, потому что код уже
+        лежит на телефоне.
+      </p>
+    </div>
+  </header>
+
+  <div class="already" id="already" hidden>
+    Игра уже открыта как приложение — ставить ничего не надо.
+  </div>
+
+  <button class="btn btn-main big-install" id="installBtn" type="button" hidden>
+    Установить сейчас
+  </button>
+
+  <div class="cards">
+
+    <section class="card">
+      <h2><span class="badge">Android</span> Chrome</h2>
+      <ol>
+        <li>Открой <b>эту страницу в Chrome</b>. Из приложения-браузера другого
+            производителя установка может не предлагаться.</li>
+        <li>Нажми кнопку <b>«Установить сейчас»</b> выше. Если её не видно —
+            открой меню Chrome (три точки справа сверху) и выбери
+            <b>«Установить приложение»</b> или <b>«Добавить на главный экран»</b>.</li>
+        <li>Подтверди <b>«Установить»</b>. Значок «Заставы» появится на рабочем
+            столе вместе с остальными приложениями.</li>
+      </ol>
+      <p class="tip">
+        Пункта меню нет вообще? Значит, страница открыта не по <code>https</code>.
+        По адресу <code>zastava.web.app</code> всё на месте.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2><span class="badge ios">iPhone</span> Safari</h2>
+      <ol>
+        <li>Открой страницу <b>именно в Safari</b>. В Chrome на iPhone кнопки
+            установки нет — так устроена сама система, а не игра.</li>
+        <li>Нажми <b>«Поделиться»</b> — квадрат со стрелкой вверх внизу экрана.</li>
+        <li>Пролистай список вниз и выбери <b>«На экран „Домой“»</b>.</li>
+        <li>Нажми <b>«Добавить»</b> справа сверху.</li>
+      </ol>
+      <p class="tip">
+        Кнопки «Установить» на этой странице у тебя не будет: Safari не даёт
+        сайту её показать. Это нормально, шаги выше работают.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2><span class="badge">Компьютер</span> Chrome, Edge</h2>
+      <ol>
+        <li>В адресной строке справа появляется значок установки — монитор со
+            стрелкой вниз. Нажми его.</li>
+        <li>Или: меню браузера → <b>«Установить „Застава“»</b>.</li>
+      </ol>
+    </section>
+
+  </div>
+
+  <section class="card wide">
+    <h2>Чтобы играть было удобно</h2>
+    <ul>
+      <li><b>Поверни телефон горизонтально.</b> Игра рассчитана на широкий
+          экран: по вертикали обзор режется вдвое, и стрелять неудобно.</li>
+      <li><b>Подвинь кнопки под свою руку.</b> В матче: пауза <b>II</b> →
+          <b>«Настроить кнопки»</b>. Любую кнопку можно перетащить пальцем куда
+          угодно и растянуть ползунком. Раскладка сохранится на этом телефоне.</li>
+      <li><b>Двигайся левой половиной экрана.</b> Стик появляется там, где ты
+          коснулся, а не в нарисованном кружке — целиться пальцем не нужно.
+          Отклонил до упора — побежал.</li>
+      <li><b>Смотри правой половиной.</b> Стрельба вынесена на отдельную кнопку
+          специально: иначе нельзя было бы просто осмотреться.</li>
+      <li><b>Прицел и присед — переключатели.</b> Держать их пальцем не надо,
+          иначе на них уходила бы вся рука.</li>
+      <li><b>Не выключай звук.</b> По шагам за спиной на телефоне ориентируешься
+          лучше, чем по экрану: обзор узкий.</li>
+    </ul>
+  </section>
+
+  <footer class="install-foot">
+    <a class="btn btn-ghost" href="index.html">Назад ко входу</a>
+  </footer>
+
+</div>
+
+<script type="module">
+  import { registerServiceWorker, wireInstallButton, isInstalled, isIOS } from "./js/pwa.js";
+  registerServiceWorker();
+  if (isInstalled()) document.getElementById("already").hidden = false;
+  // На iPhone кнопка вела бы на эту же страницу — шаги для Safari и так тут,
+  // ниже. Поэтому там её просто нет.
+  if (!isIOS()) wireInstallButton(document.getElementById("installBtn"));
+</script>
+</body>
+</html>
