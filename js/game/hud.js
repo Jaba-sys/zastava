@@ -4,6 +4,7 @@
 // перерисовки шрифтов.
 
 import { modeName } from "./modes.js";
+import { WEAPONS } from "./weapons.js";
 
 const $ = id => document.getElementById(id);
 
@@ -39,27 +40,45 @@ export class Hud {
   }
 
   /**
-   * Полка гранат: сколько осталось и какая полетит следующей.
+   * Инвентарь: полоса слотов, как в тех играх, откуда этот режим и пришёл.
    *
-   * Стоит рядом с патронами, а не в отдельном углу: и то и другое — «чем я
-   * могу выстрелить прямо сейчас», и смотреть на это надо одним взглядом.
+   * Смысл полосы не в красоте, а в одном вопросе, который возникает в бою
+   * постоянно: ЧТО У МЕНЯ ЕСТЬ. До неё ответ приходилось собирать по углам
+   * экрана — ствол в одном месте, гранаты в другом, а бомба не показывалась
+   * нигде вовсе: человек узнавал, что она у него, только по строчке «иди на
+   * точку». Теперь всё в одном ряду и под одними номерами, которыми это и
+   * переключается.
    *
-   * Показывать её или нет решает НЕ остаток, а то, куплены ли гранаты вообще
-   * (owns). Разница важная: пока полка пряталась на нуле, человек, бросивший
-   * обе, видел ровно то же, что человек, не купивший ни одной, — пустое место.
-   * И то и другое читается как «гранат у меня нет», хотя в первом случае они
-   * вернутся со следующей жизнью. Теперь пустая ячейка гаснет, но остаётся.
+   * Слот пятый — бомба — появляется только у того, кому она выпала, и это
+   * единственный слот, который может исчезнуть посреди раунда: заложил — и
+   * его нет.
    */
-  nades(counts, next, owns = (counts.frag || 0) + (counts.smoke || 0) > 0){
-    const box = $("nades");
+  slots({ arsenal, nades, nextNade, carries, owns }){
+    const box = $("slots");
     if (!box) return;
-    box.classList.toggle("show", !!owns);
-    // Класс на body: по нему подсказка карты отодвигается ниже полки.
-    document.body.classList.toggle("nades", !!owns);
-    if (!owns){ box.innerHTML = ""; return; }
-    box.innerHTML = `
-      <span class="nade${next === "frag" ? " on" : ""}${counts.frag ? "" : " empty"}">Оск. ${counts.frag || 0}</span>
-      <span class="nade${next === "smoke" ? " on" : ""}${counts.smoke ? "" : " empty"}">Дым ${counts.smoke || 0}</span>`;
+
+    const cells = [];
+    arsenal.order.forEach((id, i) => {
+      const weapon = WEAPONS[id] || arsenal.current;
+      const active = arsenal.current.id === id;
+      cells.push(`<span class="slot${active ? " on" : ""}">
+        <i>${i + 1}</i><b>${escape(weapon.short || weapon.name)}</b></span>`);
+    });
+
+    if (owns){
+      const left = (nades.frag || 0) + (nades.smoke || 0);
+      const which = nextNade === "smoke" ? "Дым" : "Оск.";
+      cells.push(`<span class="slot${left ? "" : " empty"}">
+        <i>3</i><b>${which}</b><u>${nades[nextNade] || 0}</u></span>`);
+    }
+
+    if (carries){
+      cells.push(`<span class="slot bomb"><i>5</i><b>Бомба</b></span>`);
+    }
+
+    box.classList.toggle("show", cells.length > 0);
+    document.body.classList.toggle("slots", cells.length > 0);
+    box.innerHTML = cells.join("");
   }
 
   /** Строка про бомбу: где она и сколько осталось. Пусто — значит режим не тот. */

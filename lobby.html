@@ -2,86 +2,192 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Застава переехала</title>
-<!--
-  Переадресация со старого адреса.
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Застава — лобби</title>
 
-  «Застава» жила на GitHub Pages по адресу jaba-sys.github.io/zastava/ и
-  переехала на zastava.web.app. Старый адрес остаётся рабочим — но теперь он
-  только провожает: у людей сохранены ссылки, у кого-то игра стоит на телефоне
-  как приложение, и обрывать это нельзя.
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1113">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Застава">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
-  Страница делает три вещи, и третья — самая важная.
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap&subset=cyrillic,latin" rel="stylesheet">
 
-  1. Складывает новый адрес из старого пути: /zastava/game.html?room=ABCDE
-     превращается в zastava.web.app/game.html?room=ABCDE. Ссылка «Зайти» к
-     другу продолжает работать.
-
-  2. Снимает служебного работника ИМЕННО ЭТОЙ игры и стирает её кэш. Без этого
-     переезд не состоится вовсе: старый работник отдаёт страницы из кэша раньше
-     сети, и человек ещё месяцами открывал бы старую игру, не зная, что вышла
-     новая. Обратите внимание на отбор по scope и по имени кэша — на
-     jaba-sys.github.io живут и другие проекты, и снести их работников и кэши
-     заодно было бы свинством.
-
-  3. Уходит через полторы секунды в любом случае. Уборка — дело полезное, но
-     ждать её человек не обязан: не вышло сейчас — выйдет в следующий заход.
--->
-<style>
-  html,body{height:100%}
-  body{
-    margin:0; display:grid; place-content:center; gap:14px; text-align:center;
-    background:#0e1113; color:#ece7db; padding:24px;
-    font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  }
-  b{font-size:22px; font-weight:600; letter-spacing:.04em}
-  span{color:rgba(236,231,219,.55); font-size:14px}
-  a{color:#e8a317}
-</style>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/lobby.css">
 </head>
 <body>
 
-<b>«Застава» переехала</b>
-<span>Новый адрес — <a id="go" href="https://zastava.web.app/">zastava.web.app</a></span>
+<div class="lobby-shell">
 
-<script>
-(function () {
-  var TARGET = "https://zastava.web.app";
+  <header class="top">
+    <div class="me">
+      <h1 id="who">—</h1>
+      <span id="tag"></span>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="sPoints">0</b><span>очки</span></div>
+      <div class="stat"><b id="sKills">0</b><span>убийства</span></div>
+      <div class="stat"><b id="sMatches">0</b><span>матчи</span></div>
+      <div class="stat"><b id="sRatio">0</b><span>у/с</span></div>
+      <div class="stat coins"><b id="sCoins">0</b><span>монеты</span></div>
+    </div>
+    <div class="top-actions">
+      <button class="link" id="installBtn" type="button" hidden>Установить</button>
+      <a class="link" href="install.html">На телефон</a>
+      <button class="link" id="mypealBtn" type="button">MyPeal</button>
+      <button class="link" id="outBtn" type="button">Выйти</button>
+    </div>
+  </header>
 
-  // Путь без /zastava в начале плюс всё, что было после него.
-  var rest = location.pathname.replace(/^\/zastava(\/|$)/, "/");
-  var url = TARGET + (rest === "/" ? "/" : rest) + location.search + location.hash;
-  document.getElementById("go").href = url;
+  <div class="note" id="note"></div>
 
-  var went = false;
-  function go() {
-    if (went) return;
-    went = true;
-    location.replace(url);
-  }
-  // Ждать уборку дольше полутора секунд незачем.
-  setTimeout(go, 1500);
+  <div class="rtdb-note" id="rtdbNote">
+    <b>Не задан адрес Realtime Database.</b>
+    В <code>js/config.js</code> пустое поле <code>databaseURL</code>. Если база уже
+    создана — её адрес показан в консоли Firebase на вкладке
+    Realtime Database → Data, над деревом данных. Если базы ещё нет:
+    Build → Realtime Database → Create Database → регион <code>europe-west1</code>
+    → Start in locked mode, а правила взять из <code>database.rules.json</code>.
+    Без адреса матч не запустится: по этой базе ходят позиции игроков.
+  </div>
 
-  (async function () {
-    try {
-      if (navigator.serviceWorker) {
-        var regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs
-          .filter(function (r) { return (r.scope || "").indexOf("/zastava/") !== -1; })
-          .map(function (r) { return r.unregister(); }));
-      }
-      if (window.caches) {
-        var names = await caches.keys();
-        await Promise.all(names
-          .filter(function (n) { return n.indexOf("zastava") === 0; })
-          .map(function (n) { return caches.delete(n); }));
-      }
-    } catch (e) { /* не вышло — уйдём и так */ }
-    go();
-  })();
-})();
-</script>
+  <main class="columns">
+
+    <section class="panel">
+      <h2>Карта</h2>
+      <div class="maps-grid" id="maps"></div>
+
+      <h2>Режим</h2>
+      <div class="modes" id="modes"></div>
+
+      <div class="side-pick" id="sidePick" hidden>
+        <span>Сторона</span>
+        <div class="sides" id="sides"></div>
+      </div>
+
+      <h2>Кого пускаем</h2>
+      <div class="room-setup">
+        <div class="setup-row">
+          <span>Сколько игроков</span>
+          <div class="sizes" id="sizes"></div>
+        </div>
+        <label class="setup-row toggle-row">
+          <span>
+            Только по коду
+            <i>комнаты не будет в списке — войдут те, кому ты дашь код</i>
+          </span>
+          <input type="checkbox" id="privInput">
+        </label>
+      </div>
+
+      <button class="btn btn-main" id="createBtn" type="button">Создать матч</button>
+    </section>
+
+    <section class="panel armory">
+      <h2>Оружейная</h2>
+      <p class="armory-hint">
+        Монеты капают за убийства и за доигранный матч. В бой берёшь два ствола —
+        нажми на купленный, чтобы поставить его в набор или убрать.
+      </p>
+      <div class="weapons" id="weapons"></div>
+
+      <h2>Снаряжение</h2>
+      <p class="armory-hint">
+        Гранаты выдаются по одной каждую жизнь — купил один раз и носишь всегда.
+        В бою: <b>G</b> бросить, <b>H</b> сменить.
+      </p>
+      <div class="weapons" id="gear"></div>
+
+      <div class="note" id="shopNote"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Общий сервер</h2>
+      <button class="main-server" id="mainServerBtn" type="button">
+        <span class="ms-flag">24/7</span>
+        <b>Застава — общий</b>
+        <i id="mainServerLine">Команда на команду, круглосуточно</i>
+        <u id="mainServerSeats">—</u>
+      </button>
+
+      <h2>Зайти к своим</h2>
+      <div class="join-row">
+        <input id="codeInput" maxlength="5" placeholder="Код комнаты" autocomplete="off" spellcheck="false">
+        <button class="btn btn-ghost" id="joinBtn" type="button">Войти</button>
+      </div>
+
+      <h2>Открытые комнаты</h2>
+      <div class="rooms" id="rooms">
+        <p class="empty">Смотрим, кто играет…</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Позывной</h2>
+      <div class="join-row">
+        <input id="nickInput" maxlength="18" placeholder="Как тебя звать в бою" autocomplete="off" spellcheck="false">
+        <button class="btn btn-ghost" id="nickBtn" type="button">Сменить</button>
+      </div>
+      <p class="armory-hint">
+        Так тебя видят над головой и в табло. Имя и тег в мессенджере остаются
+        прежними — в переписке ты по-прежнему ты.
+      </p>
+      <div class="note" id="nickNote"></div>
+
+      <h2>Друзья</h2>
+      <div class="join-row">
+        <input id="findInput" maxlength="24" placeholder="@тег или ник" autocomplete="off" spellcheck="false">
+        <button class="btn btn-ghost" id="findBtn" type="button">Найти</button>
+      </div>
+      <div class="note" id="friendNote"></div>
+      <div class="people" id="findResult"></div>
+
+      <div id="requestsBox" hidden>
+        <h3 class="sub">Зовут в друзья</h3>
+        <div class="people" id="requests"></div>
+      </div>
+
+      <div class="people" id="friends">
+        <p class="empty">Друзей пока нет. Найди по тегу @ — он тот же, что в мессенджере.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="hints touch-hints">
+    <span><b>Слева</b> стик движения</span>
+    <span><b>Справа</b> обзор пальцем</span>
+    <span><b>Огонь</b> большая кнопка</span>
+    <span><b>Граната</b> держать — сменить</span>
+    <span><b>Дело</b> держать на точке</span>
+    <span><b>Счёт вверху</b> табло</span>
+    <span><b>II</b> пауза и выход</span>
+  </footer>
+
+  <footer class="hints key-hints">
+    <span><b>W A S D</b> движение</span>
+    <span><b>Shift</b> бег</span>
+    <span><b>Ctrl</b> присесть</span>
+    <span><b>Пробел</b> прыжок</span>
+    <span><b>1 2</b> оружие</span>
+    <span><b>R</b> перезарядка</span>
+    <span><b>G</b> граната</span>
+    <span><b>H</b> сменить гранату</span>
+    <span><b>E</b> заложить / разминировать</span>
+    <span><b>Tab</b> табло</span>
+    <span><b>Enter</b> чат</span>
+    <span><b>ПКМ</b> прицел</span>
+    <span><b>Esc</b> пауза</span>
+  </footer>
+
+</div>
+
+<script type="module" src="js/lobby.js"></script>
 </body>
 </html>

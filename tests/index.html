@@ -42,8 +42,12 @@ import { buildMap } from "../js/game/maps/index.js";
 import { MAIN, mapForRound, isRoundKeeper } from "../js/net/live.js";
 import { WEAPONS, WEAPON_ORDER, Arsenal, damageAt, LOADOUT_SLOTS } from "../js/game/weapons.js";
 import { GRENADES, Grenade, Smoke, fragDamage, smokeBlocks } from "../js/game/grenades.js";
-import { BOMB, MODES, SIDES, SIDE_ORDER, ROUND_END, otherSide, isTeamMode } from "../js/game/modes.js";
+import {
+  BOMB, MODES, SIDES, SIDE_ORDER, ROUND_END, otherSide, isTeamMode,
+  sideAllowed, canSwitchTo, thinnerSide
+} from "../js/game/modes.js";
 import { BOMB_STATE, siteAt, fuseLeft, bombCarrier } from "../js/game/bomb.js";
+import { Nav } from "../js/game/nav.js";
 
 const out = document.getElementById("out");
 let failed = 0;
@@ -281,6 +285,28 @@ head("Заминирование");
        "минируют террористы, снимают спецназ", `${SIDES.a.name} / ${SIDES.b.name}`);
   line(otherSide("a") === "b" && otherSide("b") === "a", "стороны противоположны", "a ↔ b");
 
+  // --- равные стороны ------------------------------------------------------
+  //
+  // Считаются ЛЮДИ, и только они. Боты добивают обе стороны поровну, поэтому
+  // по числу бойцов перекос не виден: при одном человеке против нуля будет
+  // пять на пять. Ровно на этом и ловились несправедливые команды.
+  line(sideAllowed("a", { a: 0, b: 0 }) && sideAllowed("b", { a: 0, b: 0 }),
+       "в пустую комнату можно за любую сторону", "0 на 0");
+  line(!sideAllowed("a", { a: 1, b: 0 }) && sideAllowed("b", { a: 1, b: 0 }),
+       "к одинокому человеку встать нельзя — только против",
+       "1 на 0 → пускают только за вторую");
+  line(sideAllowed("a", { a: 2, b: 2 }) && sideAllowed("b", { a: 2, b: 2 }),
+       "при равенстве можно за любую", "2 на 2");
+  line(!sideAllowed("a", { a: 3, b: 1 }), "за сторону с перевесом нельзя", "3 на 1");
+
+  // Переход строже входа: при равенстве он сам и создаёт перекос.
+  line(!canSwitchTo("b", { a: 2, b: 2 }), "переходить при равенстве нельзя",
+       "2 на 2 → переход сделал бы 1 на 3");
+  line(canSwitchTo("b", { a: 3, b: 1 }), "а к меньшинству — можно", "3 на 1");
+
+  line(thinnerSide({ a: 3, b: 1 }) === "b" && thinnerSide({ a: 0, b: 0 }) === "a",
+       "«всё равно» ставит туда, где людей меньше", "3 на 1 → вторая");
+
   // Кто выигрывает раунд. Строка про timeout — самая важная: время вышло и
   // бомба не заложена означает победу СПЕЦНАЗА, а не ничью.
   line(ROUND_END.exploded.winner === "a" && ROUND_END.defused.winner === "b" &&
@@ -418,6 +444,35 @@ for (const [id, range, title] of [["karier", 76, "Карьер"], ["depo", 70, "
     const gap = Math.hypot(a[0] - s[0], a[1] - s[1], a[2] - s[2]);
     line(gap > BOMB.siteRadius * 4, "точки A и B разнесены",
          gap.toFixed(0) + " м между ними");
+  }
+
+  // --- откуда можно НЕ выбраться -------------------------------------------
+  //
+  // Проверки выше спрашивают «куда можно дойти». Этого мало: рёбра прохода
+  // односторонние — спрыгнуть можно на четырнадцать метров, а забраться на
+  // полтора. Значит, бывает место, куда дойти легко, а выйти нельзя вовсе.
+  // Формально карта проходима, а человек сидит в канаве до конца раунда.
+  //
+  // Считает это тот же граф, по которому ходят боты (js/game/nav.js), так что
+  // проверка и игра смотрят на карту одними глазами. На «Карьере» она нашла
+  // восемьдесят одну клетку за дренажным тоннелем: спрыгнул с крыши — и всё.
+  // Лечится отвалом вдоль канавы, см. karier.js.
+  {
+    const nav = new Nav(map);
+    line(nav.oneWay === 0, "нет мест, откуда не выбраться",
+         nav.oneWay ? `${nav.oneWay} клеток без выхода` : "ни одной");
+
+    // И боту есть дорога на обе точки закладки — с обеих сторон.
+    let unreachable = 0;
+    for (const side of ["a", "b"]){
+      for (const spawn of map.teamSpawns?.[side] || []){
+        for (const site of map.sites || []){
+          if (!nav.path(new THREE.Vector3(...spawn.pos), new THREE.Vector3(...site))) unreachable++;
+        }
+      }
+    }
+    line(unreachable === 0, "бот доходит до точек от каждой точки возрождения",
+         unreachable ? `${unreachable} маршрутов не нашлось` : "все маршруты есть");
   }
 }
 

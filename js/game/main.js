@@ -25,20 +25,25 @@ import { TouchControls, isTouchDevice } from "./touch.js";
 import {
   wakeSound, setVolume, getVolume, playShot, playRemoteShot, playHit, playHurt,
   playReloadOut, playReloadIn, playSwitch, playDeath, playSpawn, playKill,
-  playMatchEnd, playStep, playChat, playClick
+  playMatchEnd, playStep, playChat, playClick, playDenied
 } from "./sound.js";
 import * as net from "../net/live.js";
 import { registerServiceWorker } from "../pwa.js";
 import {
   setupRenderer, dressMap, detailMaterial, readQuality, saveQuality, QUALITY, QUALITY_ORDER
 } from "./render.js";
-import { SIDES, MODES, BOMB, ROUND_END, sideName, otherSide, isTeamMode, modeShort } from "./modes.js";
+import {
+  SIDES, MODES, BOMB, ROUND_END, sideName, otherSide, isTeamMode, modeShort,
+  sideAllowed, canSwitchTo, thinnerSide
+} from "./modes.js";
 import {
   GRENADES, GRENADE_ORDER, Grenade, Smoke, fragDamage, smokeBlocks, throwVelocity, primeSmoke
 } from "./grenades.js";
 import {
   BOMB_STATE, buildSite, buildBomb, blink, siteAt, fuseLeft, bombLine, bombCarrier, ActionBar
 } from "./bomb.js";
+import { navFor } from "./nav.js";
+import { BotCrew, CREW, isBotId } from "./bots.js";
 
 const MATCH_SECONDS = 8 * 60;
 const GOAL = { dm: 25, team: 40 };
@@ -84,11 +89,23 @@ let actionBar = null;       // полоса «закладываю / разми�
 let holdFor = 0;            // сколько секунд уже держу кнопку действия
 let roundOver = false;      // раунд кончился, ждём следующего
 let carriesBomb = false;    // бомба у меня
+let carrierSession = null;  // ...а вот у кого она вообще
+let sideWasFlipped = false; // сторону из адреса пришлось поменять ради равенства
 let nades = { frag: 0, smoke: 0 };   // сколько осталось в этой жизни
 let owned = [];             // что куплено в оружейной
 let flying = [];            // летящие гранаты
 let clouds = [];            // облака дыма
 let nextNade = "frag";      // какую бросаем по кнопке
+
+// ---- боты -----------------------------------------------------------------
+// Считает их ТОЛЬКО ведущий (тот же, что крутит раунды), и только на постоянном
+// сервере. У всех остальных crew остаётся пустым, а ботов они просто рисуют по
+// тому, что пришло из базы, — как обычных чужих бойцов.
+let crew = null;            // отряд ботов, если веду их я
+let nav = null;             // граф проходимости карты, строится по надобности
+let botsPushAt = 0;         // когда последний раз выкладывал их в базу
+let wasKeeper = false;      // был ли я ведущим на прошлой проверке
+
 const BASE_FOV = 78;
 
 const self = {
@@ -143,14 +160,23 @@ async function start(){
 
   owned = Array.isArray(profile.owned) ? profile.owned : [];
 
-  // Сторона. Человек мог выбрать её в лобби — тогда она приходит в адресе; если
-  // не выбрал, ставим по чётности числа вошедших, чтобы стороны набирались
-  // поровну без отдельного распорядителя.
+  // Сторона. Из лобби или по ссылке к другу она приходит в адресе; иначе
+  // человек выбирает её сам, экраном ниже — там видно, сколько народу на
+  // каждой стороне, а в лобби этого не видно.
   if (isTeamMode(room.mode)){
     const wanted = params.get("team");
-    me.team = (wanted === "a" || wanted === "b")
-      ? wanted
-      : ((room.count || 0) % 2 === 0 ? "a" : "b");
+    if (wanted === "a" || wanted === "b"){
+      // Сторону из адреса тоже проверяем. Ссылка «Зайти к другу» ведёт на
+      // сторону друга — и это ровно тот случай, когда стороны перекашивает:
+      // двое заходят к третьему, и получается три на ноль. Если там уже
+      // больше людей, ставим к соперникам и говорим об этом вслух.
+      const counted = await net.teamCounts(roomId).catch(() => null);
+      const people = counted?.people || { a: 0, b: 0 };
+      me.team = sideAllowed(wanted, people) ? wanted : otherSide(wanted);
+      if (me.team !== wanted) sideWasFlipped = true;
+    } else {
+      me.team = await askSide();
+    }
   }
 
   if (room.mode === "bomb"){
@@ -181,6 +207,9 @@ async function start(){
   document.getElementById("loading").classList.add("gone");
   hud.setHint(mapMeta(room.map).hint);
   hud.banner(mapMeta(room.map).name, mapMeta(room.map).subtitle, 3200);
+  if (sideWasFlipped){
+    hud.say(`За ту сторону уже больше людей — играешь за «${sideName(me.team)}».`, 7000);
+  }
 
   clock = new THREE.Clock();
   renderer.setAnimationLoop(frame);
@@ -404,7 +433,7 @@ function spawn(){
   nades.frag  = owned.includes("frag")  ? 1 : 0;
   nades.smoke = owned.includes("smoke") ? 1 : 0;
   nextNade = nades.frag ? "frag" : "smoke";
-  showNades();
+  showSlots();
   refreshCarrier();
 
   net.pushScore(roomId, me.sessionUid, { hp: 100 });
@@ -447,13 +476,26 @@ function setupBombMode(){
   }));
 }
 
-/** Кто из живых террористов несёт бомбу — считают все одинаково. */
+/**
+ * Кто из живых террористов несёт бомбу — считают все одинаково.
+ *
+ * Люди идут первыми, и только если живых людей-террористов нет вовсе, бомба
+ * достаётся боту. Иначе выходила бы обидная нелепость: человек зашёл играть за
+ * террористов, а бомба у бота, и заложить её нельзя вообще ничем.
+ */
 function refreshCarrier(){
-  if (room?.mode !== "bomb"){ carriesBomb = false; return; }
-  const live = [];
-  if (me.team === "a" && self.alive) live.push(me.sessionUid);
-  for (const [id, r] of remotes) if (r.team === "a" && r.hp > 0) live.push(id);
-  carriesBomb = bombCarrier(live) === me.sessionUid;
+  carrierSession = null;
+  carriesBomb = false;
+  if (room?.mode !== "bomb") return;
+
+  const people = [], bots = [];
+  if (me.team === "a" && self.alive) people.push(me.sessionUid);
+  for (const [id, r] of remotes){
+    if (r.team !== "a" || r.hp <= 0) continue;
+    (isBotId(id) ? bots : people).push(id);
+  }
+  carrierSession = bombCarrier(people.length ? people : bots);
+  carriesBomb = carrierSession === me.sessionUid;
 }
 
 /**
@@ -534,6 +576,277 @@ function bombExplodes(){
 }
 
 // ---------------------------------------------------------------------------
+// Выбор стороны
+// ---------------------------------------------------------------------------
+
+/**
+ * Экран «за кого играешь».
+ *
+ * Показывается до входа в комнату и ждёт ответа. Почему не в лобби: сторону
+ * выбирают, зная, сколько народу уже на каждой, — а это видно только здесь.
+ * И ещё: к другу заходят кнопкой прямо в матч, лобби при этом не открывается
+ * вовсе, и спросить было бы негде.
+ *
+ * Возвращает "a" или "b". «Всё равно» ставит туда, где меньше, — и это не то
+ * же самое, что чётность числа вошедших: после чужого ухода стороны бывают
+ * неравны, и чётность загоняет человека в ту, где и так больше.
+ */
+async function askSide(){
+  const panel = document.getElementById("sidePick");
+  const counted = await net.teamCounts(roomId).catch(() => null);
+  let people = counted?.people || { a: 0, b: 0 };
+  const bots = counted?.bots || { a: 0, b: 0 };
+
+  if (!panel) return thinnerSide(people);
+
+  document.getElementById("sidePickSub").textContent =
+    room.mode === "bomb"
+      ? "В заминировании у сторон разные задачи, и раунд для них выглядит по-разному"
+      : "Стороны дерутся между собой; счёт общий на команду";
+
+  document.getElementById("loading").classList.add("gone");
+  panel.classList.add("show");
+
+  /**
+   * Перерисовать карточки под текущий счёт людей.
+   *
+   * Сторона, где людей БОЛЬШЕ, запирается. Считаются именно люди: боты
+   * добивают обе стороны поровну, и по числу бойцов перекос не виден вовсе —
+   * при одном человеке против нуля будет пять на пять.
+   */
+  const render = () => {
+    for (const side of ["a", "b"]){
+      const card = panel.querySelector(`[data-pick="${side}"]`);
+      const open = sideAllowed(side, people);
+      card.disabled = !open;
+      card.classList.toggle("locked", !open);
+      card.querySelector("u").textContent = open
+        ? `${people[side]} ${plural(people[side], "человек", "человека", "человек")}` +
+          (bots[side] ? ` и ${bots[side]} ботов` : "")
+        : `Тут уже ${people[side]} против ${people[otherSide(side)]} — занято`;
+    }
+  };
+  render();
+
+  // Пока человек думает, в комнату может кто-то зайти. Тогда правильный выбор
+  // становится неправильным — и карточка запирается прямо под курсором.
+  const stop = net.watchTeamCounts(roomId, rows => { people = rows; render(); });
+
+  const side = await new Promise(resolve => {
+    const done = value => { panel.classList.remove("show"); resolve(value); };
+    for (const button of panel.querySelectorAll("[data-pick]")){
+      button.onclick = () => {
+        if (button.disabled) return;
+        playClick();
+        done(button.dataset.pick);
+      };
+    }
+    document.getElementById("sideAuto").onclick = () => { playClick(); done(thinnerSide(people)); };
+  });
+
+  stop?.();
+  // Последняя сверка: между нажатием и входом кто-то мог зайти той же секундой.
+  return sideAllowed(side, people) ? side : thinnerSide(people);
+}
+
+/** «1 человек», «2 человека», «5 человек» — мелочь, но глаз цепляется. */
+function plural(n, one, few, many){
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+/**
+ * Смена стороны посреди матча — со следующего раунда, а не сейчас.
+ *
+ * Мгновенная смена ломала бы раунд: человек, которому надоело проигрывать,
+ * перебегал бы к победителям прямо посреди перестрелки, да ещё и оказывался бы
+ * в тылу у бывших своих. Поэтому переход откладывается до конца раунда — ровно
+ * так же, как это устроено в играх, откуда режим и взят.
+ */
+let pendingTeam = null;
+
+async function askSwapSide(){
+  if (!isTeamMode(room.mode)) return;
+  if (pendingTeam){ pendingTeam = null; updateSwapButton(); hud.say("Остаёшься где был."); return; }
+
+  const target = otherSide(me.team);
+  const counted = await net.teamCounts(roomId).catch(() => null);
+  const people = counted?.people || { a: 0, b: 0 };
+
+  // Перейти можно, только если там людей СТРОГО меньше. При равенстве переход
+  // сам и создаёт перекос: уходишь оттуда, где было поровну, и делаешь 3:1.
+  if (!canSwitchTo(target, people)){
+    hud.say(`Там уже ${people[target]} против ${people[me.team]} — переходить некуда.`);
+    playDenied();
+    return;
+  }
+
+  pendingTeam = target;
+  updateSwapButton();
+  hud.say(`Перейдёшь в «${sideName(pendingTeam)}» со следующего раунда.`);
+}
+
+function updateSwapButton(){
+  const button = document.getElementById("swapSideBtn");
+  if (!button) return;
+  button.hidden = !isTeamMode(room.mode);
+  button.textContent = pendingTeam
+    ? `Отменить переход в «${sideName(pendingTeam)}»`
+    : `Перейти в «${sideName(otherSide(me.team))}»`;
+}
+
+/** Применить отложенный переход. Зовётся на смене раунда. */
+function applyPendingTeam(){
+  if (!pendingTeam || pendingTeam === me.team){ pendingTeam = null; return; }
+  me.team = pendingTeam;
+  pendingTeam = null;
+  net.pushScore(roomId, me.sessionUid, { team: me.team });
+  updateSwapButton();
+  hud.say(`Теперь ты за «${sideName(me.team)}».`);
+}
+
+// ---------------------------------------------------------------------------
+// Боты
+// ---------------------------------------------------------------------------
+
+/**
+ * Завести отряд. Зовётся один раз — в тот момент, когда я оказался ведущим.
+ *
+ * Все «руки» отряда выведены наружу сюда: сам bots.js в сеть не ходит и про
+ * Firebase не знает вовсе. Он считает, кто куда идёт и кто в кого попал, а
+ * рассылка — дело этого файла. Так бота можно проверить на стенде без всякой
+ * базы, и так же его можно будет однажды перенести на настоящий сервер.
+ */
+function startCrew(){
+  nav = nav || navFor(map, room.map);
+  crew = new BotCrew({
+    map, nav, mode: MODES[room.mode],
+    hooks: {
+      onShot({ bot, from, to }){
+        drawTracer(from, to);
+        playRemoteShot(bot.weapon, from.distanceTo(camera.position));
+        net.sendEvent(roomId, {
+          type: "shot", from: bot.id, weapon: bot.weapon,
+          ox: round(from.x), oy: round(from.y), oz: round(from.z),
+          hx: round(to.x),   hy: round(to.y),   hz: round(to.z)
+        });
+      },
+      onHit({ bot, target, damage }){
+        const dmg = Math.round(damage);
+        // По боту урон снимаем прямо здесь: он же у нас в руках.
+        if (isBotId(target.id)){ crew.hurt(target.id, dmg, bot.id, bot.name); return; }
+        // По себе — тоже напрямую: гонять событие самому себе через базу
+        // значит ждать круга до сервера и обратно ради своего же выстрела.
+        if (target.id === me.sessionUid){ takeDamage(dmg, bot.id, bot.name); return; }
+        net.sendEvent(roomId, {
+          type: "hit", to: target.id, from: bot.id,
+          byName: bot.name, dmg, weapon: bot.weapon
+        });
+      },
+      onKill(event){ net.sendEvent(roomId, { type: "kill", ...event }); },
+      onPlant({ bot, site, at }){
+        net.plantBomb(roomId, { site, x: at[0], y: at[1], z: at[2], by: bot.id, byName: bot.name });
+      },
+      onDefuse({ bot }){ net.defuseBomb(roomId, { by: bot.id, byName: bot.name }); }
+    }
+  });
+}
+
+/** Что боты видят вокруг себя в этот кадр. */
+function botWorld(dt){
+  const fighters = [];
+  if (self.alive){
+    fighters.push({ id: me.sessionUid, team: me.team, pos: self.pos, hp: self.hp });
+  }
+  for (const [id, remote] of remotes){
+    // Своих ботов берём из отряда, а не из базы: там они с задержкой в восьмую
+    // долю секунды, и бот стрелял бы по тому месту, где сосед был недавно.
+    if (isBotId(id) || remote.hp <= 0) continue;
+    fighters.push({ id, team: remote.team, pos: remote.shown, hp: remote.hp });
+  }
+  for (const bot of crew.list){
+    if (bot.alive) fighters.push({ id: bot.id, team: bot.team, pos: bot.pos, hp: bot.hp });
+  }
+
+  return {
+    fighters, dt, bomb,
+    carrier: carrierSession,
+    frozen: roundOver || matchOver,
+    // Дым — настоящая преграда и для ботов: иначе дымовая граната против них
+    // не работает вовсе, а это половина смысла дыма.
+    blocked: (from, to) => smokeBlocks(clouds, from, to)
+  };
+}
+
+let botFillAt = 0;
+
+/**
+ * Ход ботов. Считает их только ведущий и только на общем сервере.
+ *
+ * Отсюда важное следствие: пока в комнате нет НИ ОДНОГО человека, ботов не
+ * считает никто, и пустой сервер не тратит ни трафика, ни чужого времени.
+ * Боты существуют ровно тогда, когда есть кому на них смотреть.
+ */
+function stepBots(dt){
+  if (!room?.permanent || matchOver){ crew = null; return; }
+
+  if (!isKeeper()){
+    // Ведущий сменился — отпускаем отряд. Новый ведущий заведёт своих, а
+    // позиции старых он всё равно перепишет первой же выкладкой.
+    crew = null;
+    wasKeeper = false;
+    return;
+  }
+  if (!crew){ startCrew(); wasKeeper = true; }
+
+  const now = performance.now() / 1000;
+
+  // Добор раз в две секунды, а не каждый кадр: считать головы шестьдесят раз в
+  // секунду незачем, а создание бота — это ещё и поиск пути.
+  if (now - botFillAt > 2){
+    botFillAt = now;
+    const counts = { a: 0, b: 0 };
+    let humans = 1;
+    counts[me.team] = (counts[me.team] || 0) + 1;
+    for (const [id, remote] of remotes){
+      if (isBotId(id)) continue;
+      humans++;
+      counts[remote.team] = (counts[remote.team] || 0) + 1;
+    }
+    for (const bot of crew.list) counts[bot.team] = (counts[bot.team] || 0) + 1;
+    crew.fill(humans, counts);
+  }
+
+  crew.step(dt, botWorld(dt));
+
+  if (now - botsPushAt > 1 / CREW.sendHz){
+    botsPushAt = now;
+    net.pushBots(roomId, crew.snapshot());
+  }
+}
+
+/** Новый раунд: боты встают заново, и лишние уходят — между раундами, не в бою. */
+function restartBots(){
+  if (!crew) return;
+  let humans = 1;
+  for (const id of remotes.keys()) if (!isBotId(id)) humans++;
+
+  // Ушедших надо стереть явно: выкладка шлёт только изменившихся, и молча
+  // пропавший бот остался бы в базе стоять столбом навсегда.
+  const gone = crew.release(humans);
+  crew.restart();
+
+  // Снимок берём ПОСЛЕ restart: иначе в базу уехали бы позиции, с которых
+  // бойцы только что ушли, и первые полсекунды нового раунда все стояли бы
+  // там, где их убили в прошлом.
+  const patch = crew.snapshotAll();
+  for (const id of gone) patch[id] = null;
+  net.pushBots(roomId, patch);
+}
+
+// ---------------------------------------------------------------------------
 // Сеть
 // ---------------------------------------------------------------------------
 
@@ -555,6 +868,31 @@ function wireNetwork(){
       const remote = remotes.get(id);
       if (remote){ remote.dispose(scene); remotes.delete(id); refreshBoard(); }
     }
+  }));
+
+  // Боты приходят одним узлом, а не по одному: их выкладывает разом ведущий.
+  // Рисуем их теми же RemotePlayer, что и людей, и кладём в тот же remotes —
+  // тогда и табло, и имена над головами, и попадания, и подсчёт живых в конце
+  // раунда работают без единой отдельной ветки «а если это бот».
+  stopWatchers.push(net.watchBots(roomId, all => {
+    const seen = new Set();
+    for (const [id, data] of Object.entries(all)){
+      seen.add(id);
+      const known = remotes.get(id);
+      if (known) known.apply(data);
+      else {
+        const remote = new RemotePlayer(id, data);
+        remotes.set(id, remote);
+        scene.add(remote.group);
+      }
+    }
+    // Ушедших ботов убираем. Людей эта уборка не касается: у них свой ключ.
+    for (const [id, remote] of remotes){
+      if (!isBotId(id) || seen.has(id)) continue;
+      remote.dispose(scene);
+      remotes.delete(id);
+    }
+    refreshBoard();
   }));
 
   stopWatchers.push(net.watchEvents(roomId, event => {
@@ -581,7 +919,17 @@ function wireNetwork(){
       takeDamage(event.dmg, event.from, event.byName);
     }
 
+    // Попадание по БОТУ применяет ведущий — тот, кто этого бота и считает.
+    // Событие видят все, но трогает его один: иначе десять клиентов сняли бы
+    // с бота один и тот же урон десять раз.
+    if (event.type === "hit" && isBotId(event.to) && crew){
+      crew.hurt(event.to, event.dmg, event.from, event.byName);
+    }
+
     if (event.type === "kill"){
+      // Бот убил человека — зачтём боту. Само событие приходит к каждому, но
+      // счёт бота ведёт тот, у кого этот бот в руках.
+      if (crew && isBotId(event.killer)) crew.credit(event.killer);
       const killer = event.killerName || "Кто-то";
       const victim = event.victimName || "боец";
       hud.kill(killer, victim, event.killer === me.sessionUid || event.victim === me.sessionUid);
@@ -766,6 +1114,13 @@ function wireInput(){
     controls.requestLock();
   };
   document.getElementById("leaveBtn").onclick = () => leaveMatch();
+
+  // ---- смена стороны -------------------------------------------------------
+  const swapSide = document.getElementById("swapSideBtn");
+  if (swapSide){
+    swapSide.onclick = askSwapSide;
+    updateSwapButton();
+  }
 
   // ---- настройка экранных кнопок -----------------------------------------
   // Кнопка есть смысл только там, где эти кнопки вообще нарисованы.
@@ -1004,11 +1359,13 @@ function frame(){
   stepLabels();
   stepRound();
   stepNades(dt);
+  stepBots(dt);
   stepBombAction(dt);
   stepBomb(dt);
   stepBombRound();
 
   hud.ammo(arsenal);
+  showSlots();
   hud.timer(secondsLeft());
   if (room.mode === "bomb"){
     const left = fuseLeft(bomb);
@@ -1288,9 +1645,19 @@ function endRound(reasonId){
   }
 }
 
-/** Ведущий раундов: наименьший ключ сессии среди всех, кто в комнате. */
+/**
+ * Ведущий раундов: наименьший ключ сессии среди ЛЮДЕЙ в комнате.
+ *
+ * Именно среди людей. Боты лежат в том же remotes, что и живые бойцы, — так и
+ * задумано, иначе пришлось бы дублировать табло, имена и попадания. Но ключи у
+ * них вида "bot:1", и по алфавиту они встают раньше любой сессии. Стоило
+ * появиться первому боту — и «ведущим» оказывался он: раунды переставали
+ * крутиться, а отряд ботов каждый кадр распускался и заводился заново. Со
+ * стороны это выглядело так, что боты есть, стоят на местах и не шевелятся.
+ */
 function isKeeper(){
-  return net.isRoundKeeper(me.sessionUid, [me.sessionUid, ...remotes.keys()]);
+  const people = [me.sessionUid, ...[...remotes.keys()].filter(id => !isBotId(id))];
+  return net.isRoundKeeper(me.sessionUid, people);
 }
 
 /**
@@ -1340,20 +1707,31 @@ function stepBombRound(){
  * секунду на каждую летящую гранату и дорого, и не нужно.
  */
 /**
- * Полка гранат на экране.
+ * Перерисовать полосу слотов.
  *
- * Третьим доводом уходит «куплены ли гранаты вообще»: пустая ячейка должна
- * гаснуть, но оставаться на месте. Без этого полка пропадала на нуле, и
- * бросивший обе гранаты видел то же, что не купивший ни одной.
+ * Зовётся отовсюду, где меняется хоть что-то из показанного: сменил ствол,
+ * бросил гранату, получил бомбу, возродился. Дешевле перерисовать четыре
+ * ячейки, чем разводить по коду четыре отдельных обновления и однажды забыть
+ * про пятое.
  */
-function showNades(){
-  hud.nades?.(nades, nextNade, owned.includes("frag") || owned.includes("smoke"));
+let slotsShown = "";
+
+function showSlots(){
+  const owns = owned.includes("frag") || owned.includes("smoke");
+  // Подпись того, что на полосе видно. Зовут showSlots из десятка мест и каждый
+  // кадр, а перерисовка — это innerHTML: шестьдесят раз в секунду собирать
+  // одну и ту же строку незачем. Сравнение подписи стоит ничего и избавляет
+  // от необходимости помнить, откуда ещё надо позвать.
+  const mark = `${arsenal.order.join(",")}|${arsenal.index}|${nades.frag}|${nades.smoke}|${nextNade}|${carriesBomb}|${owns}`;
+  if (mark === slotsShown) return;
+  slotsShown = mark;
+  hud.slots?.({ arsenal, nades, nextNade, carries: carriesBomb, owns });
 }
 
 /** Переключить, какую гранату бросаем следующей. */
 function swapNade(){
   nextNade = nextNade === "frag" ? "smoke" : "frag";
-  showNades();
+  showSlots();
   playClick();
 }
 
@@ -1365,7 +1743,7 @@ function throwNade(kind){
     return;
   }
   nades[kind]--;
-  showNades();
+  showSlots();
 
   const from = camera.position.clone().addScaledVector(
     camera.getWorldDirection(new THREE.Vector3()), 0.5);
@@ -1493,8 +1871,10 @@ function onBombRound(meta){
   flying = []; clouds = [];
 
   self.respawnAt = 0;
+  applyPendingTeam();
   spawn();
   refreshCarrier();
+  restartBots();
   hud.banner(`Раунд ${meta.round}`, carriesBomb ? "Бомба у тебя" : SIDES[me.team]?.goal || "", 2600);
 }
 
@@ -1559,8 +1939,9 @@ function stepRound(){
   if (now - roundCheckedAt < 2000) return;
   roundCheckedAt = now;
 
-  const sessions = [me.sessionUid, ...remotes.keys()];
-  if (!net.isRoundKeeper(me.sessionUid, sessions)) return;
+  // Через isKeeper, а не своим списком: ботов в ведущие пускать нельзя, и
+  // помнить об этом в двух местах — верный способ однажды забыть в одном.
+  if (!isKeeper()) return;
 
   const done = roundScore("a") >= net.MAIN.killsToWin
             || roundScore("b") >= net.MAIN.killsToWin
@@ -1598,6 +1979,7 @@ function onRoundChanged(meta){
     return;
   }
 
+  applyPendingTeam();
   hud.banner(`Раунд ${meta.round}`, "Счёт обнулён", 2200);
   playSpawn();
   localStats.kills = 0;

@@ -2,86 +2,171 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Застава переехала</title>
-<!--
-  Переадресация со старого адреса.
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Застава</title>
 
-  «Застава» жила на GitHub Pages по адресу jaba-sys.github.io/zastava/ и
-  переехала на zastava.web.app. Старый адрес остаётся рабочим — но теперь он
-  только провожает: у людей сохранены ссылки, у кого-то игра стоит на телефоне
-  как приложение, и обрывать это нельзя.
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1113">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Застава">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
-  Страница делает три вещи, и третья — самая важная.
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap&subset=cyrillic,latin" rel="stylesheet">
 
-  1. Складывает новый адрес из старого пути: /zastava/game.html?room=ABCDE
-     превращается в zastava.web.app/game.html?room=ABCDE. Ссылка «Зайти» к
-     другу продолжает работать.
-
-  2. Снимает служебного работника ИМЕННО ЭТОЙ игры и стирает её кэш. Без этого
-     переезд не состоится вовсе: старый работник отдаёт страницы из кэша раньше
-     сети, и человек ещё месяцами открывал бы старую игру, не зная, что вышла
-     новая. Обратите внимание на отбор по scope и по имени кэша — на
-     jaba-sys.github.io живут и другие проекты, и снести их работников и кэши
-     заодно было бы свинством.
-
-  3. Уходит через полторы секунды в любом случае. Уборка — дело полезное, но
-     ждать её человек не обязан: не вышло сейчас — выйдет в следующий заход.
--->
-<style>
-  html,body{height:100%}
-  body{
-    margin:0; display:grid; place-content:center; gap:14px; text-align:center;
-    background:#0e1113; color:#ece7db; padding:24px;
-    font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  }
-  b{font-size:22px; font-weight:600; letter-spacing:.04em}
-  span{color:rgba(236,231,219,.55); font-size:14px}
-  a{color:#e8a317}
-</style>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/game.css">
 </head>
-<body>
+<body class="in-game">
 
-<b>«Застава» переехала</b>
-<span>Новый адрес — <a id="go" href="https://zastava.web.app/">zastava.web.app</a></span>
+<canvas id="view"></canvas>
 
-<script>
-(function () {
-  var TARGET = "https://zastava.web.app";
+<!-- Плёнка поверх картинки: лёгкое затемнение по краям и еле заметное зерно.
+     Стоит ноль (это CSS, а не лишний проход рендера), а взгляд собирает к
+     центру экрана и убирает «стерильность» ровных цифровых пикселей. -->
+<div id="filmgrain"></div>
 
-  // Путь без /zastava в начале плюс всё, что было после него.
-  var rest = location.pathname.replace(/^\/zastava(\/|$)/, "/");
-  var url = TARGET + (rest === "/" ? "/" : rest) + location.search + location.hash;
-  document.getElementById("go").href = url;
+<!-- прицел -->
+<div id="cross"><i></i><i></i><i></i><i></i></div>
+<div id="hitmark"><i></i><i></i></div>
+<div id="damage"></div>
+<!-- окуляр винтовки: чёрная рамка вокруг кружка, видна только при прицеливании -->
+<div id="scope"><i></i></div>
 
-  var went = false;
-  function go() {
-    if (went) return;
-    went = true;
-    location.replace(url);
-  }
-  // Ждать уборку дольше полутора секунд незачем.
-  setTimeout(go, 1500);
+<!-- верхняя строка: счёт и время -->
+<div id="topbar">
+  <div class="chip"><b id="scoreMine">0</b><span>/</span><b id="scoreGoal">25</b><i id="scoreLabel">убийств</i></div>
+  <div class="chip" id="clockChip"><b id="clock">8:00</b></div>
+</div>
 
-  (async function () {
-    try {
-      if (navigator.serviceWorker) {
-        var regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs
-          .filter(function (r) { return (r.scope || "").indexOf("/zastava/") !== -1; })
-          .map(function (r) { return r.unregister(); }));
-      }
-      if (window.caches) {
-        var names = await caches.keys();
-        await Promise.all(names
-          .filter(function (n) { return n.indexOf("zastava") === 0; })
-          .map(function (n) { return caches.delete(n); }));
-      }
-    } catch (e) { /* не вышло — уйдём и так */ }
-    go();
-  })();
-})();
-</script>
+<!-- лента убийств -->
+<div id="feed"></div>
+
+<!-- нижняя строка: здоровье и патроны -->
+<div id="bottombar">
+  <div class="hp">
+    <div class="hp-track"><div id="hpBar"></div></div>
+    <b id="hpValue">100</b>
+  </div>
+  <div class="ammo">
+    <i id="weaponName">Автомат</i>
+    <b id="ammoValue">30</b><span>/</span><u id="ammoMax">30</u>
+  </div>
+  <div id="slots"></div>
+</div>
+
+<!-- заминирование: где бомба и сколько осталось -->
+<div id="bombLine"></div>
+
+<!-- подсказка по карте -->
+<div id="hint"></div>
+
+<!-- связь пропала: без этой строчки замершие чужие бойцы выглядят как
+     «никого нет» или «игра сломалась», а не как пропавший интернет -->
+<div id="netlost"><i></i>Связь пропала — чужие бойцы замерли. Ждём…</div>
+
+<!-- чат матча -->
+<div id="chat">
+  <div id="chatLog"></div>
+  <input id="chatInput" maxlength="200" placeholder="Сообщение… Enter — отправить, Esc — отмена" autocomplete="off">
+</div>
+
+<!-- табло по Tab -->
+<div id="board">
+  <div class="board-head">
+    <h2>Табло</h2><span id="boardMode"></span>
+  </div>
+  <div class="board-cols"><span></span><b>Боец</b><i>тег</i><u>уб.</u><u>см.</u></div>
+  <div id="boardRows"></div>
+</div>
+
+<!-- крупные надписи -->
+<div id="banner"><b></b><span></span></div>
+
+<!-- экран захвата мыши и он же меню паузы -->
+<div id="start">
+  <b id="startTitle">Застава</b>
+  <span id="startSub">Нажми, чтобы играть</span>
+
+  <div id="pauseBox">
+    <button class="btn btn-main" id="resumeBtn" type="button">Продолжить</button>
+
+    <div class="room-line" id="roomLine">
+      <span>Код комнаты</span>
+      <b id="roomCode">—</b>
+      <button class="link" id="copyCodeBtn" type="button">скопировать</button>
+    </div>
+
+    <label class="volume">
+      <span>Графика</span>
+      <span class="quality-row" id="qualityRow"></span>
+    </label>
+
+    <label class="volume">
+      <span>Громкость</span>
+      <input id="volume" type="range" min="0" max="100" step="1">
+      <b id="volumeValue">70</b>
+    </label>
+
+    <div class="who-now">
+      <div class="who-head">
+        <h3>Кто сейчас играет</h3>
+        <span id="whoCount">—</span>
+      </div>
+      <div class="who-list" id="whoHere"></div>
+      <div class="who-list who-else" id="whoElse"></div>
+    </div>
+
+    <button class="btn btn-ghost pause-wide" id="swapSideBtn" type="button" hidden>Сменить сторону</button>
+    <button class="btn btn-ghost pause-wide" id="editTouchBtn" type="button">Настроить кнопки</button>
+    <button class="btn btn-ghost" id="leaveBtn" type="button">Выйти в лобби</button>
+    <button class="btn btn-danger" id="closeRoomBtn" type="button">Закрыть комнату</button>
+  </div>
+
+  <em>W A S D — движение · ПКМ — прицел · R — перезарядка · 1 2 — оружие · G — граната · H — сменить гранату · E — заложить или разминировать · Tab — табло · Enter — чат · Esc — пауза</em>
+</div>
+
+<!-- выбор стороны: показывается вместо «нажми, чтобы играть» в командных
+     режимах, если сторона не пришла из лобби -->
+<div id="sidePick">
+  <b>За кого играешь</b>
+  <span id="sidePickSub">В этой комнате две стороны, и у них разные задачи</span>
+  <div class="side-cards">
+    <button class="side-card side-a" data-pick="a" type="button">
+      <b>Террористы</b>
+      <i>Заложить бомбу и не дать её снять</i>
+      <u><span id="sideCountA">0</span> в команде</u>
+    </button>
+    <button class="side-card side-b" data-pick="b" type="button">
+      <b>Спецназ</b>
+      <i>Не дать заложить, а если заложили — разминировать</i>
+      <u><span id="sideCountB">0</span> в команде</u>
+    </button>
+  </div>
+  <button class="link" id="sideAuto" type="button">Всё равно — поставьте, где меньше</button>
+</div>
+
+<!-- загрузка -->
+<div id="loading">
+  <b>Готовим карту…</b>
+  <span>Соединяемся с комнатой</span>
+</div>
+
+<!-- итог матча -->
+<div id="finish">
+  <b>Матч окончен</b>
+  <div class="finish-stats">
+    <div><b id="finishKills">0</b><span>убийств</span></div>
+    <div><b id="finishDeaths">0</b><span>смертей</span></div>
+    <div class="earned"><b id="finishCoins">+0</b><span>монет</span></div>
+  </div>
+  <a class="btn btn-main" href="lobby.html">Вернуться в лобби</a>
+</div>
+
+<script type="module" src="js/game/main.js"></script>
 </body>
 </html>

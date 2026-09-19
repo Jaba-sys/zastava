@@ -2,86 +2,124 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Застава — такой страницы нет</title>
 <meta name="robots" content="noindex">
-<title>Застава переехала</title>
+
 <!--
-  Переадресация со старого адреса.
+  Страница «не найдено».
 
-  «Застава» жила на GitHub Pages по адресу jaba-sys.github.io/zastava/ и
-  переехала на zastava.web.app. Старый адрес остаётся рабочим — но теперь он
-  только провожает: у людей сохранены ссылки, у кого-то игра стоит на телефоне
-  как приложение, и обрывать это нельзя.
+  Firebase Hosting сам отдаёт этот файл на любой неизвестный адрес — достаточно,
+  чтобы он назывался 404.html и лежал в корне. Отдельной настройки не нужно.
 
-  Страница делает три вещи, и третья — самая важная.
+  Сделана она не «чтобы была». Человек попадает сюда двумя путями, и оба живые:
+  опечатался в адресе или пришёл по старой ссылке на страницу, которой больше
+  нет. В обоих случаях белый лист с английским словом Error — тупик: непонятно,
+  сломался сайт или ошибся ты. Поэтому здесь сказано, ЧТО именно не нашлось
+  (адрес показан), и рядом стоят две двери — в лобби и на главную.
 
-  1. Складывает новый адрес из старого пути: /zastava/game.html?room=ABCDE
-     превращается в zastava.web.app/game.html?room=ABCDE. Ссылка «Зайти» к
-     другу продолжает работать.
-
-  2. Снимает служебного работника ИМЕННО ЭТОЙ игры и стирает её кэш. Без этого
-     переезд не состоится вовсе: старый работник отдаёт страницы из кэша раньше
-     сети, и человек ещё месяцами открывал бы старую игру, не зная, что вышла
-     новая. Обратите внимание на отбор по scope и по имени кэша — на
-     jaba-sys.github.io живут и другие проекты, и снести их работников и кэши
-     заодно было бы свинством.
-
-  3. Уходит через полторы секунды в любом случае. Уборка — дело полезное, но
-     ждать её человек не обязан: не вышло сейчас — выйдет в следующий заход.
+  Служебный работник тут нарочно не регистрируется: класть в кэш страницу
+  ошибки незачем, а прочие страницы кэшируются сами, когда человек до них
+  дойдёт.
 -->
+
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<meta name="theme-color" content="#0e1113">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap&subset=cyrillic,latin" rel="stylesheet">
+
+<link rel="stylesheet" href="css/base.css">
 <style>
-  html,body{height:100%}
-  body{
-    margin:0; display:grid; place-content:center; gap:14px; text-align:center;
-    background:#0e1113; color:#ece7db; padding:24px;
-    font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  body{display:grid; place-items:center; padding:24px}
+
+  .lost{
+    position:relative; z-index:1;
+    width:min(520px, 100%);
+    text-align:center;
   }
-  b{font-size:22px; font-weight:600; letter-spacing:.04em}
-  span{color:rgba(236,231,219,.55); font-size:14px}
-  a{color:#e8a317}
+
+  /* Табличка. Тот же язык, что у точек закладки в бою: тёмная плашка с
+     оранжевой каймой. Табличку на «Заставе» уже знают — пусть и ошибка
+     говорит на том же языке, а не на языке веб-сервера. */
+  .plate{
+    display:inline-grid; place-items:center;
+    width:132px; height:132px; margin-bottom:26px;
+    background:rgba(10,12,13,.55);
+    border:4px solid var(--signal);
+    border-radius:10px;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);
+  }
+  .plate b{
+    font-family:var(--display); font-weight:600;
+    font-size:52px; letter-spacing:.06em; line-height:1;
+    color:var(--signal);
+  }
+
+  h1{
+    font-family:var(--display); font-weight:600;
+    font-size:26px; letter-spacing:.05em;
+    margin:0 0 10px;
+  }
+
+  .lead{color:var(--muted); font-size:14.5px; margin:0 auto 22px; max-width:42ch}
+
+  /* Адрес, которого не нашлось. Без него человек не понимает, опечатался он
+     сам или сайт потерял страницу. */
+  .where{
+    display:block; margin:0 auto 26px; max-width:100%;
+    padding:9px 12px;
+    background:var(--concrete-2);
+    border:1px solid var(--line); border-radius:var(--r);
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size:12.5px; color:rgba(236,231,219,.62);
+    overflow-wrap:anywhere;
+  }
+
+  .doors{display:grid; gap:10px}
+  /* margin-top у .btn-main нужен там, где кнопка идёт следом за полем ввода.
+     Здесь она стоит в ряд со второй, и этот отступ просто сдвигал её вниз —
+     двери получались разной высоты и на разном уровне. */
+  .doors .btn{
+    margin-top:0; text-decoration:none;
+    display:flex; align-items:center; justify-content:center;
+  }
+
+  .fineprint{margin-top:22px; color:rgba(236,231,219,.32); font-size:12px}
+
+  @media (min-width:520px){
+    .doors{grid-template-columns:1fr 1fr}
+  }
 </style>
 </head>
 <body>
 
-<b>«Застава» переехала</b>
-<span>Новый адрес — <a id="go" href="https://zastava.web.app/">zastava.web.app</a></span>
+<main class="lost">
+
+  <div class="plate"><b>404</b></div>
+
+  <h1>Такой страницы нет</h1>
+  <p class="lead">
+    Либо в адресе опечатка, либо страницу убрали. Комнаты и матчи живут не по
+    своим адресам, а внутри лобби — оттуда и стоит заходить.
+  </p>
+
+  <code class="where" id="where"></code>
+
+  <div class="doors">
+    <a class="btn btn-main" href="lobby.html">В лобби</a>
+    <a class="btn btn-ghost" href="index.html">На главную</a>
+  </div>
+
+  <p class="fineprint">Застава · браузерный шутер</p>
+
+</main>
 
 <script>
-(function () {
-  var TARGET = "https://zastava.web.app";
-
-  // Путь без /zastava в начале плюс всё, что было после него.
-  var rest = location.pathname.replace(/^\/zastava(\/|$)/, "/");
-  var url = TARGET + (rest === "/" ? "/" : rest) + location.search + location.hash;
-  document.getElementById("go").href = url;
-
-  var went = false;
-  function go() {
-    if (went) return;
-    went = true;
-    location.replace(url);
-  }
-  // Ждать уборку дольше полутора секунд незачем.
-  setTimeout(go, 1500);
-
-  (async function () {
-    try {
-      if (navigator.serviceWorker) {
-        var regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs
-          .filter(function (r) { return (r.scope || "").indexOf("/zastava/") !== -1; })
-          .map(function (r) { return r.unregister(); }));
-      }
-      if (window.caches) {
-        var names = await caches.keys();
-        await Promise.all(names
-          .filter(function (n) { return n.indexOf("zastava") === 0; })
-          .map(function (n) { return caches.delete(n); }));
-      }
-    } catch (e) { /* не вышло — уйдём и так */ }
-    go();
-  })();
-})();
+  // Показываем ровно то, что человек набрал или по чему пришёл.
+  document.getElementById("where").textContent =
+    location.pathname + location.search;
 </script>
 </body>
 </html>

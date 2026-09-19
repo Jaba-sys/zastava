@@ -107,6 +107,31 @@
           }
         },
 
+        // Боты. Их ведёт ОДИН клиент — тот же, что крутит раунды, — и пишет
+        // сюда всех разом. Ключ тут не сессия, поэтому сверять auth.uid не с
+        // чем: бот не принадлежит никому лично, и ведущий у него меняется сам
+        // собой, когда прежний вышел. Отсюда и .write для любого вошедшего.
+        //
+        // Почему боты НЕ в players: там правило auth.uid === $session, и оно
+        // должно таким остаться — иначе любой писал бы в чужого бойца. Бота под
+        // это правило не подвести, не ослабив его для людей. Отдельная ветка
+        // решает это, ничего не ломая: сюда можно писать, туда — нельзя.
+        "bots": {
+          ".write": "auth != null",
+          "$bot": {
+            ".validate": "!newData.exists() || (newData.hasChildren(['name', 'team']) && newData.child('name').val().length <= 24)",
+            "hp":    { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+            "x":     { ".validate": "newData.isNumber()" },
+            "y":     { ".validate": "newData.isNumber()" },
+            "z":     { ".validate": "newData.isNumber()" },
+            "yaw":   { ".validate": "newData.isNumber()" },
+            "pitch": { ".validate": "newData.isNumber()" },
+            "team":  { ".validate": "newData.isString() && newData.val().length <= 4" },
+            "w":     { ".validate": "newData.isString() && newData.val().length <= 12" },
+            "bot":   { ".validate": "newData.isBoolean()" }
+          }
+        },
+
         // Бомба. Пишет её клиент — тот, кто закладывает или снимает. Проверить
         // это правилами нельзя: они не знают ни где игрок стоит, ни сколько он
         // там простоял. Та же честность на доверии, что и с уроном.

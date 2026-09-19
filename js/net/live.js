@@ -618,6 +618,71 @@ export function isRoundKeeper(sessionUid, sessions){
 // какой точке, когда рванёт. Пишет его клиент — как и урон; своего сервера у
 // игры нет, и это та же честность на доверии (см. README).
 
+/**
+ * Сколько бойцов на каждой стороне прямо сейчас.
+ *
+ * Нужно ровно для одного: показать это человеку, когда он выбирает сторону.
+ * Считаем и людей, и ботов — выбирающему важно, сколько стволов на каждой
+ * стороне, а не кто их держит.
+ */
+export async function teamCounts(roomId){
+  const people = { a: 0, b: 0 }, bots = { a: 0, b: 0 };
+  const count = (rows, into) => {
+    for (const row of Object.values(rows || {})){
+      if (row?.team === "a" || row?.team === "b") into[row.team]++;
+    }
+  };
+  count((await get(ref(rtdb, `rooms/${roomId}/players`)).catch(() => null))?.val(), people);
+  count((await get(ref(rtdb, `rooms/${roomId}/bots`)).catch(() => null))?.val(), bots);
+  return { people, bots };
+}
+
+/**
+ * Живой счёт ЛЮДЕЙ по сторонам.
+ *
+ * Пока человек выбирает сторону, в комнату может кто-то зайти, и выбор,
+ * правильный секунду назад, станет неправильным. Подписываемся только на
+ * players: боты меняются восемь раз в секунду, и слушать их ради счёта — значит
+ * перерисовывать экран впустую.
+ */
+export function watchTeamCounts(roomId, callback){
+  return onValue(ref(rtdb, `rooms/${roomId}/players`), snap => {
+    const people = { a: 0, b: 0 };
+    for (const row of Object.values(snap.val() || {})){
+      if (row?.team === "a" || row?.team === "b") people[row.team]++;
+    }
+    callback(people);
+  });
+}
+
+/**
+ * Боты комнаты.
+ *
+ * Отдельная ветка, а не players, и на то есть причина в правилах базы: в
+ * players каждый может писать ТОЛЬКО в своего бойца (auth.uid === ключ), и
+ * иначе быть не должно — иначе любой писал бы в чужого. Но бот не «свой» ни
+ * для кого: его ведёт то один клиент, то другой, по мере того как ведущий
+ * меняется. Поэтому боты живут своей веткой, куда пишет любой вошедший, —
+ * та же честность на доверии, что с уроном и с бомбой.
+ */
+export function watchBots(roomId, callback){
+  return onValue(ref(rtdb, `rooms/${roomId}/bots`), snap => callback(snap.val() || {}));
+}
+
+/**
+ * Выложить ботов. Приходит НЕ весь отряд, а только изменившиеся (см.
+ * BotCrew.snapshot), поэтому update, а не set: set стёр бы всех остальных.
+ * Чтобы убрать бота, в patch кладут null — база понимает это как «удалить».
+ */
+export function pushBots(roomId, patch){
+  if (!patch || !Object.keys(patch).length) return Promise.resolve();
+  return update(ref(rtdb, `rooms/${roomId}/bots`), patch).catch(() => {});
+}
+
+export function clearBots(roomId){
+  return remove(ref(rtdb, `rooms/${roomId}/bots`)).catch(() => {});
+}
+
 export function watchBomb(roomId, callback){
   return onValue(ref(rtdb, `rooms/${roomId}/bomb`), snap => callback(snap.val()));
 }
